@@ -6,7 +6,9 @@ import {
   toStrictAbc,
   deskAudioParams,
   deskStatusFragment,
+  filterDecorationWarnings,
 } from "./deskDialect.js";
+import songTxt from "../Song.txt?raw";
 
 const SAMPLES = {
   cooleys: `X:1
@@ -60,6 +62,22 @@ K:C
 |"C"C2 E2 G2 c2|"F"F2 A2 c2 A2|"C"C2 E2 G2 E2|"C"C4 z4|
 |"F"F2 A2 c2 A2|"F"F2 A2 c2 A2|"C"C2 E2 G2 E2|"C"C4 z4|
 |"G"G2 B2 d2 B2|"F"F2 A2 c2 A2|"C"C2 E2 G2 c2|"G"G4 z4|`,
+
+  expression: `X:1
+T:Desk Expression Pack
+Inst: atmosphere
+Tone: warm
+M:4/4
+L:1/8
+Q:1/4=96
+K:C
+%% Desk: ascent, cluster, styles, crescendo / diminuendo (descendo alias ok)
+!ascent!C2 D2 E2 G2 | !cluster!c4 !cluster5!e4 | !xhead!G2 !harmonic!c2 !triangle!e2 z2 |
+!p! !crescendo(! C2 E2 G2 c2 | e2 g2 c'2 e'2 !crescendo)! !ff! |
+!descendo(! e'2 c'2 g2 e2 | c2 G2 E2 C2 !descendo)! !pp! |
+!gimplus! !cluster!c8 | z8 |`,
+
+  broken: songTxt,
 };
 
 const DEFAULT_ABC = SAMPLES.cooleys;
@@ -69,7 +87,7 @@ const app = document.querySelector("#app");
 app.innerHTML = `
   <header class="hero">
     <h1 class="brand">ABC <em>Desk</em></h1>
-    <p class="tagline">Live ABC interpreter with loose Desk headers (<code>Inst:</code> / <code>Tone:</code> or <code>%%desk-*</code>) — powered by abcjs ${abcjs.signature?.replace("abcjs-", "") ?? "6"}.</p>
+    <p class="tagline">Compose in ABC with Desk marks — <code>!ascent!</code>, <code>!cluster!</code>, note styles, real cresc./dim. ramps, <code>Inst:</code> / <code>%%MIDI program</code>. Powered by abcjs ${abcjs.signature?.replace("abcjs-", "") ?? "6"}.</p>
   </header>
   <main class="workspace">
     <section class="panel editor-panel" aria-label="ABC source">
@@ -82,6 +100,8 @@ app.innerHTML = `
             <option value="twinkle">Twinkle (%%desk-)</option>
             <option value="bach">Bach (I:desk-)</option>
             <option value="blues">Blues (Inst:)</option>
+            <option value="expression">Expression pack</option>
+            <option value="broken">Broken Reflection</option>
           </select>
           <button type="button" id="copy">Copy</button>
           <button type="button" id="copy-strict" title="Strip Desk tags; keep MIDI program">Copy strict</button>
@@ -138,6 +158,7 @@ const audioEl = document.querySelector("#audio");
 let synthControl = null;
 let renderTimer = null;
 let lastVisualObj = null;
+let renderGen = 0;
 
 class CursorControl {
   constructor() {
@@ -214,10 +235,44 @@ function initSynth() {
   });
 }
 
+/** abcjs setTune(userAction=false) keeps isLoaded + old audio buffer — force rebuild on next play. */
+function invalidateSynthAudio() {
+  if (!synthControl) return;
+  try {
+    if (typeof synthControl.pause === "function") synthControl.pause();
+  } catch {
+    /* ignore */
+  }
+  if (synthControl.timer) {
+    try {
+      synthControl.timer.reset();
+      synthControl.timer.stop();
+    } catch {
+      /* ignore */
+    }
+    synthControl.timer = null;
+  }
+  if (synthControl.midiBuffer) {
+    try {
+      synthControl.midiBuffer.stop();
+    } catch {
+      /* ignore */
+    }
+    synthControl.midiBuffer = null;
+  }
+  synthControl.isLoaded = false;
+  synthControl.isLoading = false;
+  synthControl.isStarted = false;
+}
+
 function renderScore() {
   const abc = editor.value;
+  const gen = ++renderGen;
+
   if (!abc.trim()) {
     paper.innerHTML = "";
+    lastVisualObj = null;
+    invalidateSynthAudio();
     setStatus("Enter ABC notation to render a score.");
     if (synthControl) synthControl.disable(true);
     return;
@@ -225,6 +280,10 @@ function renderScore() {
 
   try {
     const { cleanAbc, meta, warnings: deskWarnings } = parseDeskHeaders(abc);
+    if (gen !== renderGen) return;
+
+    // Always redraw the SVG so the score can't stick to a previous parse.
+    paper.innerHTML = "";
 
     const visualObjs = abcjs.renderAbc(paper, cleanAbc, {
       responsive: "resize",
@@ -237,8 +296,13 @@ function renderScore() {
       },
     });
 
+    if (gen !== renderGen) return;
+
     lastVisualObj = visualObjs[0] ?? null;
-    const warnings = [...deskWarnings, ...(lastVisualObj?.warnings ?? [])];
+    const warnings = filterDecorationWarnings([
+      ...deskWarnings,
+      ...(lastVisualObj?.warnings ?? []),
+    ]);
     const title = lastVisualObj?.metaText?.title ?? "Untitled";
     const deskBit = deskStatusFragment(meta);
     const base = deskBit
@@ -252,23 +316,30 @@ function renderScore() {
     }
 
     if (synthControl && lastVisualObj) {
-      synthControl
-        .setTune(lastVisualObj, false, deskAudioParams(meta))
-        .catch((err) => {
-          setStatus(`Audio setup: ${err}`, true);
-        });
+      const audioParams = deskAudioParams(meta);
+      // userAction=false updates visualObj but leaves isLoaded + old midiBuffer.
+      synthControl.setTune(lastVisualObj, false, audioParams);
+      invalidateSynthAudio();
+      synthControl.visualObj = lastVisualObj;
+      synthControl.options = audioParams;
+      synthControl.disable(false);
     }
   } catch (err) {
+    if (gen !== renderGen) return;
+    paper.innerHTML = "";
     setStatus(`Parse error: ${err.message ?? err}`, true);
   }
 }
 
 function scheduleRender() {
   clearTimeout(renderTimer);
-  renderTimer = setTimeout(renderScore, 220);
+  renderTimer = setTimeout(renderScore, 180);
 }
 
 editor.addEventListener("input", scheduleRender);
+editor.addEventListener("change", scheduleRender);
+editor.addEventListener("paste", () => scheduleRender());
+editor.addEventListener("cut", () => scheduleRender());
 
 sampleSelect.addEventListener("change", () => {
   const key = sampleSelect.value;

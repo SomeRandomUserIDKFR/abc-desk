@@ -1,0 +1,17 @@
+X:15
+T:The Broken Reflection (Pentalogy Act 3)
+M:4/4
+L:1/8
+Q:1/4=110
+%%MIDI program 99
+K:C
+V:1
+% Crystal Synth - Weaponized, bleeding glass textures
+%
+[C8e8] & x2 a2 ^g2 a2 | [B,8d8] & x2 a2 ^g2 a2 | [A,8c8] & x2 a2 ^g2 a2 | [F,8A8] & a2 a2 ^g2 a2 |
+[C8e8] & x2 a2 ^g2 a2 | [B,8d8] & x2 a2 ^g2 a2 | [A,8c8] & x2 a2 ^g2 a2 | E8 & e'2 d'2 d' c'3 |
+[M:3/8] z3 | % The whiplash cut before the steel clashes
+[M:4/4] !ff! c8 & A4 A4 & x2 e2 ^d2 e2 | c8 & B4 B4 & x2 e2 ^d2 e2 | c8 & c4 c4 & x2 e2 ^d2 e2 | c8 & e4 e4 & e2 e2 ^d2 e2 |
+!crescendo(! c8 & A,3-A,/2 A,1 A,3-A,/2 & x2 e2 ^d2 e2 | c8 & B,3-B,/2 B,1 B,3-B,/2 & x2 e2 ^d2 e2 | c8 & C3-C/2 C1 C3-C/2 & x2 e2 ^d2 e2 | E4 E4 & b2 a2 a g3 !crescendo)! |
+!gimplus!c8 & A,3-A,/2 A,1 A,3-A,/2 & x2 e2 ^d2 e2 & A4 A4 | c8 & B,3-B,/2 B,1 B,3-B,/2 & x2 e2 ^d2 e2 & B4 B4 | c8 & C3-C/2 C1 C3-C/2 & x2 e2 ^d2 e2 & c4 c4 | !ff! c8 & E,3-E,/2 E,1 E,3-E,/2 & e2 e2 ^d2 e2 & e4 e4 |
+[^C8^E8] & x2 e2 ^d2 e2 & A,,2 A,,2 A,,2 A,,2 | [D8F8] & x2 e2 ^d2 e2 & B,,2 B,,2 B,,2 B,,2 | !ppp! E8 & e'2 d'2 d' c'3 | % "...You got me."
