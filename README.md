@@ -52,13 +52,34 @@ Put `%%MIDI program` **before** `K:` (in the header). After `K:` / mid-body it c
 
 | Write | Meaning |
 | --- | --- |
-| `!gimplus!` | climactic hit — label `gim+` + sfz |
+| `!gimplus!` | climactic hit — `gim+` + sfz |
+| `!grit!` `!whisper!` `!snap!` `!smear!` `!choke!` | attack / color marks |
 | `!ascent!` | rising approach — label + slide |
-| `!cluster!c` / `!cluster5!e` | expand to a chord cluster around the note |
+| `!cluster!c` / `!cluster5!e` | chord cluster around the note |
 | `!xhead!` `!harmonic!` `!triangle!` `!rhythmhead!` | notehead styles |
-| `!crescendo(!` … `!crescendo)!` | hairpin up (Desk reshapes the volume ramp) |
-| `!diminuendo(!` … `!diminuendo)!` | hairpin down (same) |
-| `!descendo(!` / `!decrescendo(!` | friendly aliases → diminuendo |
-| `!cresc(!` / `!dim(!` | short aliases |
+| `!crescendo(!` … `!crescendo)!` | hairpin up (Desk reshapes the ramp) |
+| `!diminuendo(!` … / `!descendo(!` | hairpin down (alias ok) |
 
-Use **Copy strict** to strip Desk-only tags and keep `%%MIDI program` for plain ABC tools.
+### Multi-part scores
+
+```
+Part: flute
+Inst: flute
+Trans: 0
+X:1
+M:4/4
+L:1/8
+K:C
+cdef|
+
+Part: clarinet
+Inst: clarinet
+Trans: -2
+...
+```
+
+Desk assembles voices into one conductor score. Lint flags meter mismatches.
+
+### Share
+
+**Share** copies a URL with the tune in the hash (`#d=...`). Open the link to reload that source.

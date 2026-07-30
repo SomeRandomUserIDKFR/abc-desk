@@ -20,11 +20,30 @@ export const DESK_DECORATIONS = {
     label: "gim+",
     expandTo: '"^gim+"!sfz!',
   },
+  grit: {
+    label: "grit",
+    expandTo: '"^grit"!marcato!',
+  },
+  whisper: {
+    label: "whisper",
+    expandTo: '"^whisper"!pp!',
+  },
+  snap: {
+    label: "snap",
+    expandTo: '"^snap"!tenuto!!sfz!',
+  },
+  smear: {
+    label: "smear",
+    expandTo: '"^smear"!slide!',
+  },
+  choke: {
+    label: "choke",
+    expandTo: '"^choke"!wedge!',
+  },
   ascent: {
     label: "ascent",
     expandTo: '"^ascent"!slide!',
   },
-  // Friendly misspelling → real diminuendo open/close (handled in expandDeskSyntax)
   xhead: {
     label: "x-head",
     expandTo: "!style=x!",
@@ -304,6 +323,11 @@ export function filterDecorationWarnings(warnings) {
     "descrescendo",
     "cresc",
     "dim",
+    "grit",
+    "whisper",
+    "snap",
+    "smear",
+    "choke",
   ]);
   return warnings.filter((w) => {
     const m = String(w).match(/Unknown decoration:\s*([^\s<:(!]+)/i);

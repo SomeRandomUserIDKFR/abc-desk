@@ -8,6 +8,9 @@ import {
   deskStatusFragment,
   filterDecorationWarnings,
 } from "./deskDialect.js";
+import { parseParts } from "./deskParts.js";
+import { lintComposition } from "./deskLint.js";
+import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
 import songTxt from "../Song.txt?raw";
 
 const SAMPLES = {
@@ -71,23 +74,52 @@ M:4/4
 L:1/8
 Q:1/4=96
 K:C
-%% Desk: ascent, cluster, styles, crescendo / diminuendo (descendo alias ok)
-!ascent!C2 D2 E2 G2 | !cluster!c4 !cluster5!e4 | !xhead!G2 !harmonic!c2 !triangle!e2 z2 |
+!ascent!C2 D2 E2 G2 | !cluster!c4 !grit!e4 | !whisper!G2 !snap!c2 !smear!e2 !choke!g2 |
 !p! !crescendo(! C2 E2 G2 c2 | e2 g2 c'2 e'2 !crescendo)! !ff! |
 !descendo(! e'2 c'2 g2 e2 | c2 G2 E2 C2 !descendo)! !pp! |
 !gimplus! !cluster!c8 | z8 |`,
 
+  ensemble: `Part: flute
+Inst: flute
+Trans: 0
+X:1
+T:Desk Ensemble
+M:4/4
+L:1/8
+Q:1/4=100
+K:C
+c2 e2 g2 c'2 | g2 e2 c4 | d2 f2 a2 d'2 | a2 f2 d4 |
+
+Part: clarinet
+Inst: clarinet
+Trans: -2
+X:1
+M:4/4
+L:1/8
+K:C
+e2 g2 c'2 e'2 | c'2 g2 e4 | f2 a2 d'2 f'2 | d'2 a2 f4 |
+
+Part: bass
+Inst: bass
+Trans: 0
+X:1
+M:4/4
+L:1/8
+K:C bass
+C,2 E,2 G,2 C2 | G,2 E,2 C,4 | D,2 F,2 A,2 D2 | A,2 F,2 D,4 |`,
+
   broken: songTxt,
 };
 
-const DEFAULT_ABC = SAMPLES.cooleys;
+const shared = readShareFromLocation();
+const DEFAULT_ABC = shared || SAMPLES.cooleys;
 
 const app = document.querySelector("#app");
 
 app.innerHTML = `
   <header class="hero">
     <h1 class="brand">ABC <em>Desk</em></h1>
-    <p class="tagline">Compose in ABC with Desk marks — <code>!ascent!</code>, <code>!cluster!</code>, note styles, real cresc./dim. ramps, <code>Inst:</code> / <code>%%MIDI program</code>. Powered by abcjs ${abcjs.signature?.replace("abcjs-", "") ?? "6"}.</p>
+    <p class="tagline">Compose in text — lint, multi-part scores, attack marks, share links. <code>Inst:</code> / <code>%%MIDI</code>, <code>Part:</code>, <code>!gimplus!</code>.</p>
   </header>
   <main class="workspace">
     <section class="panel editor-panel" aria-label="ABC source">
@@ -96,19 +128,28 @@ app.innerHTML = `
         <div class="toolbar">
           <label class="sr-only" for="sample">Sample tune</label>
           <select id="sample" title="Load a sample">
-            <option value="cooleys">Cooley's (Inst:)</option>
-            <option value="twinkle">Twinkle (%%desk-)</option>
-            <option value="bach">Bach (I:desk-)</option>
-            <option value="blues">Blues (Inst:)</option>
+            <option value="cooleys">Cooley's</option>
+            <option value="twinkle">Twinkle</option>
+            <option value="bach">Bach</option>
+            <option value="blues">Blues</option>
             <option value="expression">Expression pack</option>
+            <option value="ensemble">Ensemble (Part:)</option>
             <option value="broken">Broken Reflection</option>
           </select>
           <button type="button" id="copy">Copy</button>
           <button type="button" id="copy-strict" title="Strip Desk tags; keep MIDI program">Copy strict</button>
+          <button type="button" id="share" title="Copy shareable URL">Share</button>
           <button type="button" id="clear">Clear</button>
         </div>
       </div>
-      <textarea id="editor" spellcheck="false" aria-label="ABC notation editor">${DEFAULT_ABC}</textarea>
+      <textarea id="editor" spellcheck="false" aria-label="ABC notation editor"></textarea>
+      <div class="lint-panel" aria-label="Composition lint">
+        <div class="lint-header">
+          <h2 class="panel-title">Lint</h2>
+          <span id="lint-count" class="lint-count">0</span>
+        </div>
+        <ul id="lint-list" class="lint-list"></ul>
+      </div>
     </section>
     <section class="panel score-panel" aria-label="Rendered score">
       <div class="panel-header">
@@ -154,6 +195,13 @@ const paper = document.querySelector("#paper");
 const statusEl = document.querySelector("#status");
 const sampleSelect = document.querySelector("#sample");
 const audioEl = document.querySelector("#audio");
+const lintList = document.querySelector("#lint-list");
+const lintCount = document.querySelector("#lint-count");
+
+editor.value = DEFAULT_ABC;
+if (shared) {
+  sampleSelect.value = "";
+}
 
 let synthControl = null;
 let renderTimer = null;
@@ -218,6 +266,54 @@ function setStatus(message, isError = false) {
   statusEl.classList.toggle("error", isError);
 }
 
+function renderLint(issues) {
+  lintCount.textContent = String(issues.length);
+  lintCount.dataset.level = issues.some((i) => i.severity === "error")
+    ? "error"
+    : issues.some((i) => i.severity === "warn")
+      ? "warn"
+      : issues.length
+        ? "info"
+        : "ok";
+
+  lintList.innerHTML = "";
+  if (!issues.length) {
+    const li = document.createElement("li");
+    li.className = "lint-empty";
+    li.textContent = "No issues — looking good.";
+    lintList.appendChild(li);
+    return;
+  }
+
+  for (const issue of issues) {
+    const li = document.createElement("li");
+    li.className = `lint-item lint-${issue.severity}`;
+    li.tabIndex = 0;
+    li.innerHTML = `<span class="lint-sev">${issue.severity}</span><span class="lint-msg"></span>`;
+    li.querySelector(".lint-msg").textContent = issue.message;
+    const jump = () => {
+      if (issue.start == null) return;
+      editor.focus();
+      editor.setSelectionRange(
+        issue.start,
+        issue.end ?? Math.min(issue.start + 12, editor.value.length),
+      );
+      // Scroll textarea to selection approximately
+      const pre = editor.value.slice(0, issue.start);
+      const line = pre.split(/\n/).length;
+      editor.scrollTop = Math.max(0, (line - 3) * 18);
+    };
+    li.addEventListener("click", jump);
+    li.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        jump();
+      }
+    });
+    lintList.appendChild(li);
+  }
+}
+
 function initSynth() {
   if (!abcjs.synth.supportsAudio()) {
     audioEl.innerHTML =
@@ -235,7 +331,6 @@ function initSynth() {
   });
 }
 
-/** abcjs setTune(userAction=false) keeps isLoaded + old audio buffer — force rebuild on next play. */
 function invalidateSynthAudio() {
   if (!synthControl) return;
   try {
@@ -265,6 +360,31 @@ function invalidateSynthAudio() {
   synthControl.isStarted = false;
 }
 
+/**
+ * Prepare source: multi-part assemble → Desk dialect preprocess.
+ */
+function prepareSource(source) {
+  const partInfo = parseParts(source);
+  let working = source;
+  /** @type {string[]} */
+  const extraWarnings = [...(partInfo.warnings || [])];
+  let partsMeta = null;
+
+  if (partInfo.isMultiPart && partInfo.assembledAbc) {
+    working = partInfo.assembledAbc;
+    partsMeta = partInfo.parts;
+  }
+
+  const parsed = parseDeskHeaders(working);
+  return {
+    cleanAbc: parsed.cleanAbc,
+    meta: { ...parsed.meta, parts: partsMeta },
+    warnings: [...extraWarnings, ...parsed.warnings],
+    partInfo,
+    sourceForLint: source,
+  };
+}
+
 function renderScore() {
   const abc = editor.value;
   const gen = ++renderGen;
@@ -273,25 +393,28 @@ function renderScore() {
     paper.innerHTML = "";
     lastVisualObj = null;
     invalidateSynthAudio();
+    renderLint([]);
     setStatus("Enter ABC notation to render a score.");
     if (synthControl) synthControl.disable(true);
     return;
   }
 
   try {
-    const { cleanAbc, meta, warnings: deskWarnings } = parseDeskHeaders(abc);
+    const prepared = prepareSource(abc);
     if (gen !== renderGen) return;
 
-    // Always redraw the SVG so the score can't stick to a previous parse.
     paper.innerHTML = "";
 
-    const visualObjs = abcjs.renderAbc(paper, cleanAbc, {
+    const visualObjs = abcjs.renderAbc(paper, prepared.cleanAbc, {
       responsive: "resize",
       add_classes: true,
       clickListener: (abcElem) => {
         if (abcElem?.startChar != null && abcElem?.endChar != null) {
           editor.focus();
-          editor.setSelectionRange(abcElem.startChar, abcElem.endChar);
+          // Prefer selecting in original editor when single-part
+          if (!prepared.partInfo.isMultiPart) {
+            editor.setSelectionRange(abcElem.startChar, abcElem.endChar);
+          }
         }
       },
     });
@@ -300,14 +423,25 @@ function renderScore() {
 
     lastVisualObj = visualObjs[0] ?? null;
     const warnings = filterDecorationWarnings([
-      ...deskWarnings,
+      ...prepared.warnings,
       ...(lastVisualObj?.warnings ?? []),
     ]);
+
+    const issues = lintComposition(
+      prepared.sourceForLint,
+      prepared.cleanAbc,
+      lastVisualObj,
+      prepared.meta,
+    );
+    renderLint(issues);
+
     const title = lastVisualObj?.metaText?.title ?? "Untitled";
-    const deskBit = deskStatusFragment(meta);
-    const base = deskBit
-      ? `Rendered “${title}” · ${deskBit}`
-      : `Rendered “${title}”`;
+    const deskBit = deskStatusFragment(prepared.meta);
+    const partBit = prepared.partInfo.isMultiPart
+      ? `${prepared.partInfo.parts.length} parts`
+      : "";
+    const bits = [deskBit, partBit].filter(Boolean).join(" · ");
+    const base = bits ? `Rendered “${title}” · ${bits}` : `Rendered “${title}”`;
 
     if (warnings.length) {
       setStatus(`${base} — ${warnings[0]}`, true);
@@ -316,8 +450,7 @@ function renderScore() {
     }
 
     if (synthControl && lastVisualObj) {
-      const audioParams = deskAudioParams(meta);
-      // userAction=false updates visualObj but leaves isLoaded + old midiBuffer.
+      const audioParams = deskAudioParams(prepared.meta);
       synthControl.setTune(lastVisualObj, false, audioParams);
       invalidateSynthAudio();
       synthControl.visualObj = lastVisualObj;
@@ -327,6 +460,13 @@ function renderScore() {
   } catch (err) {
     if (gen !== renderGen) return;
     paper.innerHTML = "";
+    renderLint([
+      {
+        id: "parse",
+        severity: "error",
+        message: `Parse error: ${err.message ?? err}`,
+      },
+    ]);
     setStatus(`Parse error: ${err.message ?? err}`, true);
   }
 }
@@ -344,6 +484,7 @@ editor.addEventListener("cut", () => scheduleRender());
 sampleSelect.addEventListener("change", () => {
   const key = sampleSelect.value;
   editor.value = SAMPLES[key] ?? DEFAULT_ABC;
+  history.replaceState(null, "", window.location.pathname + window.location.search);
   renderScore();
 });
 
@@ -360,16 +501,27 @@ document.querySelector("#copy").addEventListener("click", async () => {
 
 document.querySelector("#copy-strict").addEventListener("click", async () => {
   try {
-    const strict = toStrictAbc(editor.value);
-    await navigator.clipboard.writeText(strict);
+    const prepared = prepareSource(editor.value);
+    await navigator.clipboard.writeText(toStrictAbc(prepared.cleanAbc));
     setStatus("Copied strict ABC (Desk tags stripped; MIDI program kept).");
   } catch {
     setStatus("Could not copy to clipboard.", true);
   }
 });
 
+document.querySelector("#share").addEventListener("click", async () => {
+  try {
+    const url = await copyShareUrl(editor.value);
+    history.replaceState(null, "", url);
+    setStatus("Share link copied — anyone with the URL can open this tune.");
+  } catch {
+    setStatus("Could not copy share link.", true);
+  }
+});
+
 document.querySelector("#clear").addEventListener("click", () => {
   editor.value = "";
+  history.replaceState(null, "", window.location.pathname + window.location.search);
   renderScore();
 });
 

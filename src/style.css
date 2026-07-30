@@ -245,6 +245,106 @@ button.primary:hover {
   background: rgba(224, 122, 106, 0.08);
 }
 
+.lint-panel {
+  border-top: 1px solid var(--panel-edge);
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.lint-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--panel-edge);
+}
+
+.lint-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--panel-edge);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+.lint-count[data-level="error"] {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.lint-count[data-level="warn"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.lint-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem 0;
+  overflow: auto;
+  flex: 1;
+}
+
+.lint-empty {
+  padding: 0.55rem 1rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.lint-item {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr;
+  gap: 0.55rem;
+  padding: 0.4rem 1rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.lint-item:hover,
+.lint-item:focus {
+  outline: none;
+  background: rgba(126, 200, 196, 0.1);
+}
+
+.lint-sev {
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding-top: 0.15rem;
+}
+
+.lint-warn .lint-sev {
+  color: var(--accent);
+}
+
+.lint-error .lint-sev {
+  color: var(--danger);
+}
+
+.lint-info .lint-sev {
+  color: var(--accent-soft);
+}
+
+.lint-msg {
+  color: var(--text);
+}
+
+.editor-panel {
+  min-height: 0;
+}
+
+.editor-panel #editor {
+  flex: 1;
+  min-height: 240px;
+  resize: vertical;
+}
+
 .abcjs-cursor {
   stroke: var(--accent-soft);
   stroke-width: 2;
@@ -260,6 +360,6 @@ button.primary:hover {
   }
 
   #editor {
-    min-height: 280px;
+    min-height: 220px;
   }
 }
