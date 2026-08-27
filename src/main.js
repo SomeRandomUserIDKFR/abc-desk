@@ -228,15 +228,45 @@ function tuneFileStem() {
   return safeFileStem(lastVisualObj?.metaText?.title ?? "untitled");
 }
 
-function triggerDownloadFromUrl(url, fileName) {
+function triggerDownloadFromUrl(
+  url,
+  fileName,
+  { revoke = true, revokeDelayMs = 10000 } = {},
+) {
   const link = document.createElement("a");
   document.body.appendChild(link);
   link.setAttribute("style", "display:none;");
   link.href = url;
   link.download = fileName;
   link.click();
-  window.URL.revokeObjectURL(url);
+  if (revoke && /^blob:/i.test(url)) {
+    window.setTimeout(
+      () => window.URL.revokeObjectURL(url),
+      Math.max(1000, revokeDelayMs),
+    );
+  }
   document.body.removeChild(link);
+}
+
+function toMidiBytes(midiPayload) {
+  if (midiPayload instanceof Uint8Array) return midiPayload;
+  if (midiPayload instanceof ArrayBuffer) return new Uint8Array(midiPayload);
+  if (typeof midiPayload === "string") {
+    const base64Match = midiPayload.match(/^data:audio\/midi;base64,(.*)$/i);
+    let decoded = "";
+    if (base64Match) {
+      decoded = atob(base64Match[1]);
+    } else if (/^data:audio\/midi,/i.test(midiPayload)) {
+      const encoded = midiPayload.replace(/^data:audio\/midi,/i, "");
+      decoded = decodeURIComponent(encoded);
+    } else {
+      decoded = midiPayload;
+    }
+    const out = new Uint8Array(decoded.length);
+    for (let i = 0; i < decoded.length; i++) out[i] = decoded.charCodeAt(i) & 0xff;
+    return out;
+  }
+  throw new Error("Unexpected MIDI payload format");
 }
 
 function updateDownloadButtons() {
@@ -537,13 +567,15 @@ document.querySelector("#render-now").addEventListener("click", renderScore);
 
 downloadMidiBtn.addEventListener("click", () => {
   try {
-    const source = lastVisualObj ?? lastPrepared?.cleanAbc;
-    if (!source) {
+    if (!lastVisualObj) {
       setStatus("Render a tune before downloading MIDI.", true);
       return;
     }
-    const midi = abcjs.synth.getMidiFile(source, { midiOutputType: "binary" });
-    const blob = new Blob([midi], { type: "audio/midi" });
+    const midiPayload = abcjs.synth.getMidiFile(lastVisualObj, {
+      midiOutputType: "binary",
+    });
+    const midiBytes = toMidiBytes(midiPayload);
+    const blob = new Blob([midiBytes], { type: "audio/midi" });
     const url = window.URL.createObjectURL(blob);
     triggerDownloadFromUrl(url, `${tuneFileStem()}.mid`);
     setStatus("Downloaded MIDI file.");
@@ -553,6 +585,7 @@ downloadMidiBtn.addEventListener("click", () => {
 });
 
 downloadWavBtn.addEventListener("click", async () => {
+  let synth = null;
   try {
     if (!supportsAudio) {
       setStatus("WAV download is not supported in this browser.", true);
@@ -562,15 +595,21 @@ downloadWavBtn.addEventListener("click", async () => {
       setStatus("Render a tune before downloading WAV.", true);
       return;
     }
-    const synth = new abcjs.synth.CreateSynth();
     const audioParams = deskAudioParams(lastPrepared.meta);
+    synth = new abcjs.synth.CreateSynth();
     await synth.init({ visualObj: lastVisualObj, options: audioParams });
     await synth.prime();
-    const url = synth.download();
-    triggerDownloadFromUrl(url, `${tuneFileStem()}.wav`);
+    const synthUrl = synth.download();
+    triggerDownloadFromUrl(synthUrl, `${tuneFileStem()}.wav`);
     setStatus("Downloaded WAV file.");
   } catch (err) {
     setStatus(`Could not download WAV: ${err.message ?? err}`, true);
+  } finally {
+    try {
+      if (typeof synth?.stop === "function") synth.stop();
+    } catch {
+      /* ignore cleanup errors */
+    }
   }
 });
 
