@@ -349,6 +349,8 @@ export function parseDeskHeaders(source) {
   let toneRaw = null;
   /** @type {number | null} */
   let midiProgramFromDirective = null;
+  /** @type {number[]} */
+  const midiProgramsFromDirectives = [];
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -389,6 +391,7 @@ export function parseDeskHeaders(source) {
         const program = Number(nums.length >= 2 ? nums[1] : nums[0]);
         if (Number.isInteger(program) && program >= 0 && program <= 127) {
           midiProgramFromDirective = program;
+          midiProgramsFromDirectives.push(program);
           // Canonical clean line — abcjs-friendly, no trailing comment noise
           kept.push(
             nums.length >= 2
@@ -409,6 +412,8 @@ export function parseDeskHeaders(source) {
   let cleanAbc = kept.join("\n");
   const fromInst = resolveInstrument(instrumentRaw);
   const tone = resolveTone(toneRaw);
+  const hasMultipleMidiPrograms =
+    new Set(midiProgramsFromDirectives).size > 1;
 
   if (instrumentRaw && !fromInst) {
     warnings.push(`Unknown Inst: “${instrumentRaw}” (try flute, violin, piano, or a GM number)`);
@@ -419,11 +424,11 @@ export function parseDeskHeaders(source) {
 
   // Prefer explicit %%MIDI program when present; Inst: fills it in when missing.
   // Both mean “instrument” — %%MIDI is the standard spelling for abcjs/abcmidi.
-  let midiProgram = midiProgramFromDirective;
-  if (midiProgram == null && fromInst) {
+  let midiProgram = hasMultipleMidiPrograms ? null : midiProgramFromDirective;
+  if (midiProgram == null && !hasMultipleMidiPrograms && fromInst) {
     midiProgram = fromInst.program;
     cleanAbc = injectMidiProgram(cleanAbc, fromInst.program);
-  } else if (midiProgram != null) {
+  } else if (midiProgram != null && !hasMultipleMidiPrograms) {
     if (fromInst && fromInst.program !== midiProgram) {
       warnings.push(
         `Inst: (${fromInst.program}) differs from %%MIDI program ${midiProgram} — using %%MIDI`,
@@ -451,7 +456,9 @@ export function parseDeskHeaders(source) {
       toneRaw,
       midiProgram: midiProgram ?? undefined,
       instrumentSource:
-        midiProgramFromDirective != null
+        hasMultipleMidiPrograms
+          ? null
+          : midiProgramFromDirective != null
           ? "midi"
           : fromInst
             ? "inst"

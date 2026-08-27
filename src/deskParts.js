@@ -1,3 +1,5 @@
+import { parseDeskHeaders } from "./deskDialect.js";
+
 /**
  * Multi-part assembly: Part: blocks → one multi-voice conductor ABC.
  *
@@ -17,7 +19,6 @@
 
 const PART_START = /^Part:\s*(.+)$/i;
 const TRANS_LINE = /^(?:Trans|Transpose)\s*:\s*(-?\d+)\s*$/i;
-const INST_LINE = /^Inst:\s*(.+)$/i;
 
 /**
  * @typedef {{ name: string, transpose: number, instrument?: string, body: string, meter?: string, start: number }} DeskPart
@@ -52,12 +53,8 @@ export function parseParts(source) {
       };
     } else if (current) {
       const trans = line.trim().match(TRANS_LINE);
-      const inst = line.trim().match(INST_LINE);
       if (trans) {
         current.transpose = Number(trans[1]);
-      } else if (inst) {
-        current.instrument = inst[1].trim();
-        current.lines.push(line);
       } else {
         const m = line.trim().match(/^M:\s*(.+)$/i);
         if (m) current.meter = m[1].trim();
@@ -105,7 +102,14 @@ function assembleParts(parts, warnings) {
   let ref = 1;
 
   parts.forEach((part, idx) => {
-    const fields = extractFields(part.body);
+    const prepared = parseDeskHeaders(part.body);
+    const fields = extractFields(prepared.cleanAbc);
+    const midiProgram = prepared.meta.midiProgram;
+    const instrumentName = prepared.meta.instrument?.name ?? part.instrument;
+    for (const warning of prepared.warnings) {
+      warnings.push(`Part “${part.name}”: ${warning}`);
+    }
+
     if (idx === 0) {
       if (fields.T) title = fields.T;
       if (fields.M) meter = fields.M;
@@ -119,20 +123,12 @@ function assembleParts(parts, warnings) {
       }
     }
 
-    const music = stripHeader(part.body);
+    const music = stripHeader(prepared.cleanAbc);
     if (!music.trim()) {
       warnings.push(`Part “${part.name}” has no note body`);
     }
 
     const vNum = idx + 1;
-    const voiceHeader = [
-      `V:${vNum} name="${escapeQuotes(part.name)}"`,
-      part.instrument ? `%%MIDI program ${resolveProgramGuess(part.instrument)}` : null,
-      part.transpose ? `%%MIDI transpose ${part.transpose}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n");
-
     // Visual transpose for written→concert when assembling
     const clefHint = /bass|cello|trombone/i.test(part.name)
       ? " clef=bass"
@@ -143,10 +139,8 @@ function assembleParts(parts, warnings) {
       declare: `V:${vNum} name="${escapeQuotes(part.name)}"${clefHint}`,
       music: music.trim(),
       transpose: part.transpose,
-      instrument: part.instrument,
-      midiProgram: part.instrument
-        ? resolveProgramGuess(part.instrument)
-        : undefined,
+      instrument: instrumentName,
+      midiProgram,
     });
   });
 
@@ -203,29 +197,4 @@ function stripHeader(body) {
 
 function escapeQuotes(s) {
   return String(s).replace(/"/g, "'");
-}
-
-/** Minimal name→program for part Inst: lines during assembly. */
-function resolveProgramGuess(name) {
-  const key = name.trim().toLowerCase();
-  const map = {
-    flute: 73,
-    clarinet: 71,
-    oboe: 68,
-    violin: 40,
-    viola: 41,
-    cello: 42,
-    bass: 32,
-    piano: 0,
-    trumpet: 56,
-    horn: 60,
-    guitar: 24,
-    fiddle: 110,
-    atmosphere: 99,
-    crystal: 98,
-  };
-  if (map[key] != null) return map[key];
-  const n = Number(key);
-  if (Number.isInteger(n) && n >= 0 && n <= 127) return n;
-  return 0;
 }
