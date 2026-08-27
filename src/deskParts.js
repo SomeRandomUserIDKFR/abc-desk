@@ -105,7 +105,6 @@ function assembleParts(parts, warnings) {
     const prepared = parseDeskHeaders(part.body);
     const fields = extractFields(prepared.cleanAbc);
     const midiProgram = prepared.meta.midiProgram;
-    const instrumentName = prepared.meta.instrument?.name ?? part.instrument;
     for (const warning of prepared.warnings) {
       warnings.push(`Part “${part.name}”: ${warning}`);
     }
@@ -139,7 +138,6 @@ function assembleParts(parts, warnings) {
       declare: `V:${vNum} name="${escapeQuotes(part.name)}"${clefHint}`,
       music: music.trim(),
       transpose: part.transpose,
-      instrument: instrumentName,
       midiProgram,
     });
   });
