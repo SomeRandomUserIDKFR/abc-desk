@@ -425,10 +425,14 @@ export function parseDeskHeaders(source) {
   // Prefer explicit %%MIDI program when present; Inst: fills it in when missing.
   // Both mean “instrument” — %%MIDI is the standard spelling for abcjs/abcmidi.
   let midiProgram = hasMultipleMidiPrograms ? null : midiProgramFromDirective;
-  if (midiProgram == null && !hasMultipleMidiPrograms && fromInst) {
+  if (hasMultipleMidiPrograms && fromInst) {
+    warnings.push(
+      `Inst: (${fromInst.program}) ignored because multiple %%MIDI program directives are present`,
+    );
+  } else if (midiProgram == null && fromInst) {
     midiProgram = fromInst.program;
     cleanAbc = injectMidiProgram(cleanAbc, fromInst.program);
-  } else if (midiProgram != null && !hasMultipleMidiPrograms) {
+  } else if (midiProgram != null) {
     if (fromInst && fromInst.program !== midiProgram) {
       warnings.push(
         `Inst: (${fromInst.program}) differs from %%MIDI program ${midiProgram} — using %%MIDI`,
