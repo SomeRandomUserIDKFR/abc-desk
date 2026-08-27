@@ -156,6 +156,8 @@ app.innerHTML = `
         <h2 class="panel-title">Score</h2>
         <div class="toolbar">
           <button type="button" class="primary" id="render-now">Render</button>
+          <button type="button" id="download-midi" title="Download current tune as MIDI">MIDI</button>
+          <button type="button" id="download-wav" title="Download current tune as WAV">WAV</button>
         </div>
       </div>
       <div class="audio-row">
@@ -197,6 +199,9 @@ const sampleSelect = document.querySelector("#sample");
 const audioEl = document.querySelector("#audio");
 const lintList = document.querySelector("#lint-list");
 const lintCount = document.querySelector("#lint-count");
+const downloadMidiBtn = document.querySelector("#download-midi");
+const downloadWavBtn = document.querySelector("#download-wav");
+const supportsAudio = abcjs.synth.supportsAudio();
 
 editor.value = DEFAULT_ABC;
 if (shared) {
@@ -206,7 +211,69 @@ if (shared) {
 let synthControl = null;
 let renderTimer = null;
 let lastVisualObj = null;
+let lastPrepared = null;
 let renderGen = 0;
+
+function safeFileStem(raw) {
+  const base = String(raw || "untitled")
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64);
+  return base || "untitled";
+}
+
+function tuneFileStem() {
+  return safeFileStem(lastVisualObj?.metaText?.title ?? "untitled");
+}
+
+function triggerDownloadFromUrl(
+  url,
+  fileName,
+  { revoke = true, revokeDelayMs = 10000 } = {},
+) {
+  const link = document.createElement("a");
+  document.body.appendChild(link);
+  link.setAttribute("style", "display:none;");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  if (revoke && /^blob:/i.test(url)) {
+    window.setTimeout(
+      () => window.URL.revokeObjectURL(url),
+      Math.max(1000, revokeDelayMs),
+    );
+  }
+  document.body.removeChild(link);
+}
+
+function toMidiBytes(midiPayload) {
+  if (midiPayload instanceof Uint8Array) return midiPayload;
+  if (midiPayload instanceof ArrayBuffer) return new Uint8Array(midiPayload);
+  if (typeof midiPayload === "string") {
+    const base64Match = midiPayload.match(/^data:audio\/midi;base64,(.*)$/i);
+    let decoded = "";
+    if (base64Match) {
+      decoded = atob(base64Match[1]);
+    } else if (/^data:audio\/midi,/i.test(midiPayload)) {
+      const encoded = midiPayload.replace(/^data:audio\/midi,/i, "");
+      decoded = decodeURIComponent(encoded);
+    } else {
+      decoded = midiPayload;
+    }
+    const out = new Uint8Array(decoded.length);
+    for (let i = 0; i < decoded.length; i++) out[i] = decoded.charCodeAt(i) & 0xff;
+    return out;
+  }
+  throw new Error("Unexpected MIDI payload format");
+}
+
+function updateDownloadButtons() {
+  const hasTune = Boolean(lastVisualObj);
+  downloadMidiBtn.disabled = !hasTune;
+  downloadWavBtn.disabled = !hasTune || !supportsAudio;
+}
 
 class CursorControl {
   constructor() {
@@ -318,6 +385,7 @@ function initSynth() {
   if (!abcjs.synth.supportsAudio()) {
     audioEl.innerHTML =
       '<p style="margin:0;color:var(--muted);font-size:0.85rem">Audio playback is not supported in this browser.</p>';
+    updateDownloadButtons();
     return;
   }
 
@@ -392,16 +460,19 @@ function renderScore() {
   if (!abc.trim()) {
     paper.innerHTML = "";
     lastVisualObj = null;
+    lastPrepared = null;
     invalidateSynthAudio();
     renderLint([]);
     setStatus("Enter ABC notation to render a score.");
     if (synthControl) synthControl.disable(true);
+    updateDownloadButtons();
     return;
   }
 
   try {
     const prepared = prepareSource(abc);
     if (gen !== renderGen) return;
+    lastPrepared = prepared;
 
     paper.innerHTML = "";
 
@@ -457,9 +528,12 @@ function renderScore() {
       synthControl.options = audioParams;
       synthControl.disable(false);
     }
+    updateDownloadButtons();
   } catch (err) {
     if (gen !== renderGen) return;
     paper.innerHTML = "";
+    lastVisualObj = null;
+    lastPrepared = null;
     renderLint([
       {
         id: "parse",
@@ -468,6 +542,7 @@ function renderScore() {
       },
     ]);
     setStatus(`Parse error: ${err.message ?? err}`, true);
+    updateDownloadButtons();
   }
 }
 
@@ -489,6 +564,54 @@ sampleSelect.addEventListener("change", () => {
 });
 
 document.querySelector("#render-now").addEventListener("click", renderScore);
+
+downloadMidiBtn.addEventListener("click", () => {
+  try {
+    if (!lastVisualObj) {
+      setStatus("Render a tune before downloading MIDI.", true);
+      return;
+    }
+    const midiPayload = abcjs.synth.getMidiFile(lastVisualObj, {
+      midiOutputType: "binary",
+    });
+    const midiBytes = toMidiBytes(midiPayload);
+    const blob = new Blob([midiBytes], { type: "audio/midi" });
+    const url = window.URL.createObjectURL(blob);
+    triggerDownloadFromUrl(url, `${tuneFileStem()}.mid`);
+    setStatus("Downloaded MIDI file.");
+  } catch (err) {
+    setStatus(`Could not download MIDI: ${err.message ?? err}`, true);
+  }
+});
+
+downloadWavBtn.addEventListener("click", async () => {
+  let synth = null;
+  try {
+    if (!supportsAudio) {
+      setStatus("WAV download is not supported in this browser.", true);
+      return;
+    }
+    if (!lastVisualObj || !lastPrepared) {
+      setStatus("Render a tune before downloading WAV.", true);
+      return;
+    }
+    const audioParams = deskAudioParams(lastPrepared.meta);
+    synth = new abcjs.synth.CreateSynth();
+    await synth.init({ visualObj: lastVisualObj, options: audioParams });
+    await synth.prime();
+    const synthUrl = synth.download();
+    triggerDownloadFromUrl(synthUrl, `${tuneFileStem()}.wav`);
+    setStatus("Downloaded WAV file.");
+  } catch (err) {
+    setStatus(`Could not download WAV: ${err.message ?? err}`, true);
+  } finally {
+    try {
+      if (typeof synth?.stop === "function") synth.stop();
+    } catch {
+      /* ignore cleanup errors */
+    }
+  }
+});
 
 document.querySelector("#copy").addEventListener("click", async () => {
   try {
@@ -538,3 +661,4 @@ editor.addEventListener("keydown", (e) => {
 
 initSynth();
 renderScore();
+updateDownloadButtons();
