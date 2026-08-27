@@ -677,7 +677,7 @@ export function programToSoundfontName(program) {
  * Synth options derived from Desk meta.
  * Instrument comes from %%MIDI program in the ABC (Inst: compiles to that).
  * Do not pass options.program — it fights / shadows the standard directive.
- * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, midiProgram?: number }} meta
+ * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, midiProgram?: number, hasMultipleMidiPrograms?: boolean }} meta
  */
 export function deskAudioParams(meta) {
   const program = meta.hasMultipleMidiPrograms
