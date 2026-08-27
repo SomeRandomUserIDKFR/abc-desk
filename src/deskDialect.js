@@ -349,6 +349,10 @@ export function parseDeskHeaders(source) {
   let toneRaw = null;
   /** @type {number | null} */
   let midiProgramFromDirective = null;
+  /** @type {number | null} */
+  let firstMidiProgramFromDirective = null;
+  /** @type {number[]} */
+  const midiProgramsFromDirectives = [];
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -388,7 +392,11 @@ export function parseDeskHeaders(source) {
       if (nums?.length) {
         const program = Number(nums.length >= 2 ? nums[1] : nums[0]);
         if (Number.isInteger(program) && program >= 0 && program <= 127) {
+          if (firstMidiProgramFromDirective == null) {
+            firstMidiProgramFromDirective = program;
+          }
           midiProgramFromDirective = program;
+          midiProgramsFromDirectives.push(program);
           // Canonical clean line — abcjs-friendly, no trailing comment noise
           kept.push(
             nums.length >= 2
@@ -409,6 +417,8 @@ export function parseDeskHeaders(source) {
   let cleanAbc = kept.join("\n");
   const fromInst = resolveInstrument(instrumentRaw);
   const tone = resolveTone(toneRaw);
+  const hasMultipleMidiPrograms =
+    new Set(midiProgramsFromDirectives).size > 1;
 
   if (instrumentRaw && !fromInst) {
     warnings.push(`Unknown Inst: “${instrumentRaw}” (try flute, violin, piano, or a GM number)`);
@@ -419,11 +429,15 @@ export function parseDeskHeaders(source) {
 
   // Prefer explicit %%MIDI program when present; Inst: fills it in when missing.
   // Both mean “instrument” — %%MIDI is the standard spelling for abcjs/abcmidi.
-  let midiProgram = midiProgramFromDirective;
-  if (midiProgram == null && fromInst) {
+  let midiProgram = firstMidiProgramFromDirective;
+  if (hasMultipleMidiPrograms && fromInst) {
+    warnings.push(
+      `Inst: “${instrumentRaw}” (program ${fromInst.program}) ignored because multiple %%MIDI program directives are present; keep one %%MIDI program if you want a single shared instrument`,
+    );
+  } else if (midiProgram == null && fromInst) {
     midiProgram = fromInst.program;
     cleanAbc = injectMidiProgram(cleanAbc, fromInst.program);
-  } else if (midiProgram != null) {
+  } else if (midiProgram != null && !hasMultipleMidiPrograms) {
     if (fromInst && fromInst.program !== midiProgram) {
       warnings.push(
         `Inst: (${fromInst.program}) differs from %%MIDI program ${midiProgram} — using %%MIDI`,
@@ -434,7 +448,9 @@ export function parseDeskHeaders(source) {
   }
 
   const instrument =
-    midiProgram != null
+    hasMultipleMidiPrograms
+      ? null
+      : midiProgram != null
       ? instrumentFromProgram(midiProgram)
       : fromInst;
 
@@ -450,8 +466,11 @@ export function parseDeskHeaders(source) {
       instrumentRaw,
       toneRaw,
       midiProgram: midiProgram ?? undefined,
+      hasMultipleMidiPrograms,
       instrumentSource:
-        midiProgramFromDirective != null
+        hasMultipleMidiPrograms
+          ? null
+          : midiProgramFromDirective != null
           ? "midi"
           : fromInst
             ? "inst"
@@ -658,10 +677,12 @@ export function programToSoundfontName(program) {
  * Synth options derived from Desk meta.
  * Instrument comes from %%MIDI program in the ABC (Inst: compiles to that).
  * Do not pass options.program — it fights / shadows the standard directive.
- * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, midiProgram?: number }} meta
+ * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, midiProgram?: number, hasMultipleMidiPrograms?: boolean }} meta
  */
 export function deskAudioParams(meta) {
-  const program = meta.midiProgram ?? meta.instrument?.program;
+  const program = meta.hasMultipleMidiPrograms
+    ? undefined
+    : meta.midiProgram ?? meta.instrument?.program;
   const forceInstrument = programToSoundfontName(program);
 
   const options = {
