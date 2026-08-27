@@ -349,6 +349,8 @@ export function parseDeskHeaders(source) {
   let toneRaw = null;
   /** @type {number | null} */
   let midiProgramFromDirective = null;
+  /** @type {number | null} */
+  let firstMidiProgramFromDirective = null;
   /** @type {number[]} */
   const midiProgramsFromDirectives = [];
 
@@ -390,6 +392,9 @@ export function parseDeskHeaders(source) {
       if (nums?.length) {
         const program = Number(nums.length >= 2 ? nums[1] : nums[0]);
         if (Number.isInteger(program) && program >= 0 && program <= 127) {
+          if (firstMidiProgramFromDirective == null) {
+            firstMidiProgramFromDirective = program;
+          }
           midiProgramFromDirective = program;
           midiProgramsFromDirectives.push(program);
           // Canonical clean line — abcjs-friendly, no trailing comment noise
@@ -424,15 +429,15 @@ export function parseDeskHeaders(source) {
 
   // Prefer explicit %%MIDI program when present; Inst: fills it in when missing.
   // Both mean “instrument” — %%MIDI is the standard spelling for abcjs/abcmidi.
-  let midiProgram = hasMultipleMidiPrograms ? null : midiProgramFromDirective;
+  let midiProgram = firstMidiProgramFromDirective;
   if (hasMultipleMidiPrograms && fromInst) {
     warnings.push(
-      `Inst: “${instrumentRaw}” (program ${fromInst.program}) ignored because multiple %%MIDI program directives are present`,
+      `Inst: “${instrumentRaw}” (program ${fromInst.program}) ignored because multiple %%MIDI program directives are present; keep one %%MIDI program if you want a single shared instrument`,
     );
   } else if (midiProgram == null && fromInst) {
     midiProgram = fromInst.program;
     cleanAbc = injectMidiProgram(cleanAbc, fromInst.program);
-  } else if (midiProgram != null) {
+  } else if (midiProgram != null && !hasMultipleMidiPrograms) {
     if (fromInst && fromInst.program !== midiProgram) {
       warnings.push(
         `Inst: (${fromInst.program}) differs from %%MIDI program ${midiProgram} — using %%MIDI`,
@@ -443,7 +448,9 @@ export function parseDeskHeaders(source) {
   }
 
   const instrument =
-    midiProgram != null
+    hasMultipleMidiPrograms
+      ? null
+      : midiProgram != null
       ? instrumentFromProgram(midiProgram)
       : fromInst;
 
@@ -459,6 +466,7 @@ export function parseDeskHeaders(source) {
       instrumentRaw,
       toneRaw,
       midiProgram: midiProgram ?? undefined,
+      hasMultipleMidiPrograms,
       instrumentSource:
         hasMultipleMidiPrograms
           ? null
@@ -672,7 +680,9 @@ export function programToSoundfontName(program) {
  * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, midiProgram?: number }} meta
  */
 export function deskAudioParams(meta) {
-  const program = meta.midiProgram ?? meta.instrument?.program;
+  const program = meta.hasMultipleMidiPrograms
+    ? undefined
+    : meta.midiProgram ?? meta.instrument?.program;
   const forceInstrument = programToSoundfontName(program);
 
   const options = {
