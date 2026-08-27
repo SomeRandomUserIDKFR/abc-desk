@@ -427,7 +427,7 @@ export function parseDeskHeaders(source) {
   let midiProgram = hasMultipleMidiPrograms ? null : midiProgramFromDirective;
   if (hasMultipleMidiPrograms && fromInst) {
     warnings.push(
-      `Inst: (${fromInst.program}) ignored because multiple %%MIDI program directives are present`,
+      `Inst: “${instrumentRaw}” (program ${fromInst.program}) ignored because multiple %%MIDI program directives are present`,
     );
   } else if (midiProgram == null && fromInst) {
     midiProgram = fromInst.program;
