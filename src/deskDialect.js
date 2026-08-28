@@ -246,6 +246,25 @@ const BASS_NAMES = new Set([
   "tuba",
 ]);
 
+const FX_NAMES = new Set([
+  "fx-rain",
+  "fx-soundtrack",
+  "fx-crystal",
+  "fx-atmosphere",
+  "fx-brightness",
+  "fx-goblins",
+  "fx-echoes",
+  "fx-scifi",
+  "pad-1-new-age",
+  "pad-2-warm",
+  "pad-3-polysynth",
+  "pad-4-choir",
+  "pad-5-bowed",
+  "pad-6-metallic",
+  "pad-7-halo",
+  "pad-8-sweep",
+]);
+
 /** @type {Record<string, { label: string, options: Record<string, number> }>} */
 export const TONES = {
   neutral: {
@@ -823,6 +842,31 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     }
   }
 
+  for (const track of tracks) {
+    for (const note of track) {
+      if (note.volume == null || note.start == null || note.end == null) continue;
+      const dur = Math.max(0.001, note.end - note.start);
+      if (dur > HOLD_THRESHOLD) continue;
+      const family = instrumentFamily(note.instrument);
+      const shortFactor = isViolinInstrument(note.instrument)
+        ? 1.88
+        : family === "woodwind"
+        ? 1.34
+        : family === "strings"
+        ? 1.28
+        : family === "brass"
+        ? 1.3
+        : family === "bass"
+        ? 1.14
+        : 1.22;
+      let volume = Math.max(14, Math.round(note.volume * shortFactor));
+      if (isViolinInstrument(note.instrument) && dur <= 0.25) {
+        volume = Math.max(16, Math.round(volume * 1.12 + 4));
+      }
+      note.volume = volume;
+    }
+  }
+
   addPercussionMarkers(tracks, ctx);
 
   return tracks;
@@ -897,6 +941,11 @@ function isWoodwindInstrument(instrument) {
   return Number.isInteger(program) && WOODWIND_PROGRAMS.has(program);
 }
 
+function isViolinInstrument(instrument) {
+  const name = normalizeInstrumentName(instrument);
+  return name === "violin" || name === "fiddle";
+}
+
 function normalizeInstrumentName(instrument) {
   return String(instrument || "")
     .trim()
@@ -915,6 +964,7 @@ function instrumentFamily(instrument) {
     return "brass";
   }
   if (BASS_NAMES.has(name) || /bass/.test(name)) return "bass";
+  if (FX_NAMES.has(name) || /^(fx|pad)-/.test(name)) return "fx";
   return "other";
 }
 
@@ -923,7 +973,7 @@ function familyMixProfile(family) {
     case "woodwind":
       return {
         base: 0.95,
-        shortBoost: 1.12,
+        shortBoost: 1.32,
         holdBase: 0.955,
         holdDepth: 0.1,
         highCut: 82,
@@ -933,7 +983,7 @@ function familyMixProfile(family) {
     case "strings":
       return {
         base: 1.03,
-        shortBoost: 1.08,
+        shortBoost: 1.22,
         holdBase: 0.99,
         holdDepth: 0.05,
         highCut: 90,
@@ -943,7 +993,7 @@ function familyMixProfile(family) {
     case "brass":
       return {
         base: 0.95,
-        shortBoost: 1.1,
+        shortBoost: 1.28,
         holdBase: 0.97,
         holdDepth: 0.07,
         highCut: 78,
@@ -953,17 +1003,27 @@ function familyMixProfile(family) {
     case "bass":
       return {
         base: 1,
-        shortBoost: 1.05,
+        shortBoost: 1.14,
         holdBase: 0.995,
         holdDepth: 0.02,
         highCut: 0,
         stackFactor: 0.95,
         unisonFactor: 0.93,
       };
+    case "fx":
+      return {
+        base: 1.05,
+        shortBoost: 1.0,
+        holdBase: 1.0,
+        holdDepth: 0,
+        highCut: 0,
+        stackFactor: 1,
+        unisonFactor: 1,
+      };
     default:
       return {
         base: 1,
-        shortBoost: 1.08,
+        shortBoost: 1.2,
         holdBase: 0.97,
         holdDepth: 0.07,
         highCut: 0,
