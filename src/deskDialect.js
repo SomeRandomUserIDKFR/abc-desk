@@ -10,6 +10,9 @@ const ENCODED_RE =
   /^(?:%%|I:)\s*desk-(instrument|tone)\s+(.+)$/i;
 const UNKNOWN_DESK_RE = /^(?:%%|I:)\s*desk-([a-z0-9-]+)\b/i;
 const MIDI_PROGRAM_LINE_RE = /^%%\s*MIDI\s+program\b(.*)$/i;
+const DRUM_FRIENDLY_RE = /^(Drum1|Drum2)\s*:\s*(.*)$/i;
+const DRUM_ENCODED_RE = /^(?:%%|I:)\s*desk-drum(1|2)\s+(.+)$/i;
+const DRUM_MARKER_RE = /^\s*(?:!([oOpP])!|([oOpP]))(?=$|[\s|:\]\)\}\/,;])/;
 
 /**
  * Composition decorations beyond stock abcjs.
@@ -101,15 +104,26 @@ export const INSTRUMENTS = {
   "electric bass": { program: 33, label: "Electric Bass" },
   violin: { program: 40, label: "Violin" },
   viola: { program: 41, label: "Viola" },
+  viol: { program: 41, label: "Viola" },
   cello: { program: 42, label: "Cello" },
+  chello: { program: 42, label: "Cello" },
+  violoncello: { program: 42, label: "Cello" },
   contrabass: { program: 43, label: "Contrabass" },
   harp: { program: 46, label: "Orchestral Harp" },
   timpani: { program: 47, label: "Timpani" },
   strings: { program: 48, label: "String Ensemble" },
   trumpet: { program: 56, label: "Trumpet" },
+  trump: { program: 56, label: "Trumpet" },
+  cornet: { program: 56, label: "Trumpet" },
+  bugle: { program: 56, label: "Trumpet" },
+  flugelhorn: { program: 56, label: "Trumpet" },
   trombone: { program: 57, label: "Trombone" },
+  baritone: { program: 57, label: "Trombone" },
+  euphonium: { program: 57, label: "Trombone" },
   tuba: { program: 58, label: "Tuba" },
   horn: { program: 60, label: "French Horn" },
+  "french horn": { program: 60, label: "French Horn" },
+  "tenor horn": { program: 60, label: "French Horn" },
   sax: { program: 65, label: "Alto Sax" },
   "alto sax": { program: 65, label: "Alto Sax" },
   "tenor sax": { program: 66, label: "Tenor Sax" },
@@ -134,6 +148,35 @@ export const INSTRUMENTS = {
   "new age": { program: 88, label: "Pad 1 (New Age)" },
 };
 
+const DRUM_SOUNDS = {
+  "acoustic-snare": 38,
+  snare: 38,
+  "bass-drum-1": 36,
+  bassdrum: 36,
+  kick: 36,
+  "closed-hi-hat": 42,
+  "open-hi-hat": 46,
+  "pedal-hi-hat": 44,
+  "hand-clap": 39,
+  "side-stick": 37,
+  "electric-snare": 40,
+  "low-floor-tom": 41,
+  "high-floor-tom": 43,
+  "low-tom": 45,
+  "low-mid-tom": 47,
+  "hi-mid-tom": 48,
+  "high-tom": 50,
+  "crash-cymbal-1": 49,
+  "ride-cymbal-1": 51,
+  tambourine: 54,
+  cowbell: 56,
+  maracas: 70,
+  claves: 75,
+  "wood-block": 76,
+  "hi-wood-block": 76,
+  "low-wood-block": 77,
+};
+
 /** Reverse map program → best label */
 const PROGRAM_LABELS = (() => {
   /** @type {Record<number, string>} */
@@ -146,6 +189,17 @@ const PROGRAM_LABELS = (() => {
   map[98] = "FX Crystal";
   return map;
 })();
+
+const WOODWIND_PROGRAMS = new Set([68, 70, 71, 73, 74, 78, 79]);
+const WOODWIND_NAMES = new Set([
+  "oboe",
+  "bassoon",
+  "clarinet",
+  "flute",
+  "recorder",
+  "whistle",
+  "ocarina",
+]);
 
 /** @type {Record<string, { label: string, options: Record<string, number> }>} */
 export const TONES = {
@@ -165,11 +219,26 @@ export const TONES = {
     label: "Soft",
     options: { soundFontVolumeMultiplier: 0.7, swing: 0 },
   },
+  rustic: {
+    label: "Rustic",
+    options: { soundFontVolumeMultiplier: 0.9, swing: 0.06 },
+  },
+  upbeat: {
+    label: "Upbeat",
+    options: { soundFontVolumeMultiplier: 1.05, swing: 0.18 },
+  },
+  sorrow: {
+    label: "Sorrow",
+    options: { soundFontVolumeMultiplier: 0.78, swing: 0 },
+  },
   swing: {
     label: "Swing",
     options: { soundFontVolumeMultiplier: 1, swing: 0.55 },
   },
 };
+
+const DEFAULT_DRUM_1 = resolveDrumSound("acoustic-snare");
+const DEFAULT_DRUM_2 = resolveDrumSound("bass-drum-1");
 
 /**
  * @param {number} program
@@ -208,6 +277,25 @@ export function resolveTone(raw) {
   const hit = TONES[key];
   if (!hit) return null;
   return { ...hit, name: key };
+}
+
+/**
+ * @param {string} raw
+ * @returns {{ pitch: number, label: string, name: string } | null}
+ */
+export function resolveDrumSound(raw) {
+  if (!raw) return null;
+  const key = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
+  const midi = Number(key);
+  if (Number.isInteger(midi) && midi >= 35 && midi <= 81) {
+    return { pitch: midi, label: `Drum ${midi}`, name: key };
+  }
+  const hit = DRUM_SOUNDS[key];
+  if (!hit) return null;
+  return { pitch: hit, label: key.replace(/-/g, " "), name: key };
 }
 
 /**
@@ -328,6 +416,8 @@ export function filterDecorationWarnings(warnings) {
     "snap",
     "smear",
     "choke",
+    "o",
+    "p",
   ]);
   return warnings.filter((w) => {
     const m = String(w).match(/Unknown decoration:\s*([^\s<:(!]+)/i);
@@ -347,6 +437,8 @@ export function parseDeskHeaders(source) {
   const warnings = [];
   let instrumentRaw = null;
   let toneRaw = null;
+  let drum1Raw = null;
+  let drum2Raw = null;
   /** @type {number | null} */
   let midiProgramFromDirective = null;
   /** @type {number | null} */
@@ -372,6 +464,24 @@ export function parseDeskHeaders(source) {
       const value = encoded[2].trim();
       if (kind === "instrument") instrumentRaw = value;
       else toneRaw = value;
+      continue;
+    }
+
+    const drumFriendly = trimmed.match(DRUM_FRIENDLY_RE);
+    if (drumFriendly) {
+      const kind = drumFriendly[1].toLowerCase();
+      const value = drumFriendly[2].trim();
+      if (kind === "drum1") drum1Raw = value;
+      else drum2Raw = value;
+      continue;
+    }
+
+    const drumEncoded = trimmed.match(DRUM_ENCODED_RE);
+    if (drumEncoded) {
+      const kind = drumEncoded[1];
+      const value = drumEncoded[2].trim();
+      if (kind === "1") drum1Raw = value;
+      else drum2Raw = value;
       continue;
     }
 
@@ -417,6 +527,8 @@ export function parseDeskHeaders(source) {
   let cleanAbc = kept.join("\n");
   const fromInst = resolveInstrument(instrumentRaw);
   const tone = resolveTone(toneRaw);
+  const drum1 = drum1Raw ? (resolveDrumSound(drum1Raw) ?? DEFAULT_DRUM_1) : undefined;
+  const drum2 = drum2Raw ? (resolveDrumSound(drum2Raw) ?? DEFAULT_DRUM_2) : undefined;
   const hasMultipleMidiPrograms =
     new Set(midiProgramsFromDirectives).size > 1;
 
@@ -424,7 +536,13 @@ export function parseDeskHeaders(source) {
     warnings.push(`Unknown Inst: “${instrumentRaw}” (try flute, violin, piano, or a GM number)`);
   }
   if (toneRaw && !tone) {
-    warnings.push(`Unknown Tone: “${toneRaw}” (try warm, bright, soft, swing, neutral)`);
+    warnings.push(`Unknown Tone: “${toneRaw}” (try warm, bright, soft, rustic, upbeat, sorrow, swing, neutral)`);
+  }
+  if (drum1Raw && !resolveDrumSound(drum1Raw)) {
+    warnings.push(`Unknown Drum1: “${drum1Raw}” (try acoustic-snare, bass-drum-1, closed-hi-hat, or a MIDI drum number 35-81)`);
+  }
+  if (drum2Raw && !resolveDrumSound(drum2Raw)) {
+    warnings.push(`Unknown Drum2: “${drum2Raw}” (try acoustic-snare, bass-drum-1, closed-hi-hat, or a MIDI drum number 35-81)`);
   }
 
   // Prefer explicit %%MIDI program when present; Inst: fills it in when missing.
@@ -475,6 +593,10 @@ export function parseDeskHeaders(source) {
           : fromInst
             ? "inst"
             : null,
+      drum1,
+      drum2,
+      drum1Raw,
+      drum2Raw,
       decorationsUsed,
     },
     warnings,
@@ -554,8 +676,11 @@ export function toStrictAbc(source) {
 export function balanceHeldNotes(tracks, ctx = {}) {
   if (!tracks?.length) return tracks;
 
-  const REF = 0.2;
-  const MIN_FACTOR = 0.28;
+  // Note durations from abcjs are in whole notes; 2 quarter-note beats in 4/4
+  // is 1/2 of a whole note.
+  const HOLD_THRESHOLD = 0.5;
+  const HOLD_SPAN = 1.5;
+  const MIN_FACTOR = 0.9;
   const forceInst = ctx?.forceInstrument;
 
   if (forceInst) {
@@ -572,8 +697,12 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     for (const note of track) {
       if (note.volume == null || note.start == null || note.end == null) continue;
       const dur = Math.max(0.001, note.end - note.start);
-      if (dur <= REF) continue;
-      const factor = Math.max(MIN_FACTOR, Math.pow(REF / dur, 0.55));
+      if (dur <= HOLD_THRESHOLD) continue;
+      const woodwind = isWoodwindInstrument(note.instrument);
+      const t = Math.min(1, (dur - HOLD_THRESHOLD) / HOLD_SPAN);
+      const factor = woodwind
+        ? Math.max(MIN_FACTOR, 0.965 - 0.09 * Math.pow(t, 0.8))
+        : Math.max(MIN_FACTOR, 0.97 - 0.07 * Math.pow(t, 0.85));
       note.volume = Math.max(12, Math.round(note.volume * factor));
     }
   }
@@ -595,7 +724,57 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     }
   }
 
+  addPercussionMarkers(tracks, ctx);
+
   return tracks;
+}
+
+function addPercussionMarkers(tracks, ctx) {
+  const source = String(ctx?.sourceText || "");
+  if (!source) return;
+
+  const additions = [];
+  for (const track of tracks) {
+    for (const note of track) {
+      if (note.startChar == null || note.endChar == null) continue;
+      const marker = findDrumMarker(source, note.endChar);
+      if (!marker) continue;
+      const drum = marker.kind === "o" ? ctx?.drum1 ?? DEFAULT_DRUM_1 : ctx?.drum2 ?? DEFAULT_DRUM_2;
+      additions.push({
+        track,
+        note: {
+          pitch: drum.pitch,
+          instrument: "percussion",
+          start: note.start,
+          end: note.end,
+          volume: Math.max(18, Math.min(127, Math.round(note.volume * (marker.accent ? 0.82 : 0.68)))),
+        },
+      });
+    }
+  }
+
+  for (const item of additions) {
+    item.track.push(item.note);
+  }
+}
+
+function findDrumMarker(source, endChar) {
+  const rest = source.slice(Math.max(0, endChar));
+  const m = rest.match(DRUM_MARKER_RE);
+  if (!m) return null;
+  const kind = (m[1] || m[2]).toLowerCase();
+  return {
+    kind,
+    accent: (m[1] || m[2]) === (m[1] || m[2]).toUpperCase(),
+  };
+}
+
+function isWoodwindInstrument(instrument) {
+  if (instrument == null) return false;
+  const name = String(instrument).trim().toLowerCase();
+  if (WOODWIND_NAMES.has(name)) return true;
+  const program = Number(name);
+  return Number.isInteger(program) && WOODWIND_PROGRAMS.has(program);
 }
 
 /**
@@ -688,10 +867,18 @@ export function deskAudioParams(meta) {
   const options = {
     chordsOff: false,
     fadeLength: 320,
-    callbackContext: { forceInstrument },
+    callbackContext: {
+      forceInstrument,
+      sourceText: meta.sourceText,
+      drum1: meta.drum1,
+      drum2: meta.drum2,
+    },
     sequenceCallback: (tracks, ctx) =>
       balanceHeldNotes(tracks, {
         forceInstrument: ctx?.forceInstrument ?? forceInstrument,
+        sourceText: ctx?.sourceText ?? meta.sourceText,
+        drum1: ctx?.drum1 ?? meta.drum1,
+        drum2: ctx?.drum2 ?? meta.drum2,
       }),
   };
 
@@ -733,6 +920,10 @@ export function deskStatusFragment(meta) {
   }
   if (meta.tone) {
     parts.push(`Tone ${meta.tone.label}`);
+  }
+  if (meta.drum1 || meta.drum2) {
+    const drums = [meta.drum1?.label, meta.drum2?.label].filter(Boolean);
+    if (drums.length) parts.push(`Drums ${drums.join(" / ")}`);
   }
   if (meta.decorationsUsed?.length) {
     const labels = meta.decorationsUsed.map((k) => {

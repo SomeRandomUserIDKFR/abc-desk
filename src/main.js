@@ -446,7 +446,7 @@ function prepareSource(source) {
   const parsed = parseDeskHeaders(working);
   return {
     cleanAbc: parsed.cleanAbc,
-    meta: { ...parsed.meta, parts: partsMeta },
+    meta: { ...parsed.meta, parts: partsMeta, sourceText: parsed.cleanAbc },
     warnings: [...extraWarnings, ...parsed.warnings],
     partInfo,
     sourceForLint: source,

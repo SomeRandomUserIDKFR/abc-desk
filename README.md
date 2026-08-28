@@ -46,7 +46,8 @@ Put `%%MIDI program` **before** `K:` (in the header). After `K:` / mid-body it c
 `Inst: flute` compiles to `%%MIDI program 73`. If both are present, `%%MIDI program` wins.
 
 - **Inst: / %%MIDI program** — GM instrument for playback (`flute`, `violin`, `atmosphere`, or `0`–`127`)
-- **Tone:** playback character — `neutral`, `warm`, `bright`, `soft`, `swing`
+- **Tone:** playback character — `neutral`, `warm`, `bright`, `soft`, `rustic`, `upbeat`, `sorrow`, `swing`
+- **Drum1: / Drum2:** drum sounds for `o` / `p` note-attached hits (also `!o!` / `!p!`; `acoustic-snare`, `bass-drum-1`, `closed-hi-hat`, or `35`–`81`)
 
 ### Note / expression marks
 
@@ -59,6 +60,8 @@ Put `%%MIDI program` **before** `K:` (in the header). After `K:` / mid-body it c
 | `!xhead!` `!harmonic!` `!triangle!` `!rhythmhead!` | notehead styles |
 | `!crescendo(!` … `!crescendo)!` | hairpin up (Desk reshapes the ramp) |
 | `!diminuendo(!` … / `!descendo(!` | hairpin down (alias ok) |
+| `o` `O` / `!o!` `!O!` | drum hit 1 on the preceding note |
+| `p` `P` / `!p!` `!P!` | drum hit 2 on the preceding note |
 
 ### Multi-part scores
 
