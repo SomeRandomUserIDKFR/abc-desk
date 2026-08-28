@@ -6,8 +6,10 @@ import { build } from "vite";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tempDir = path.join(rootDir, ".standalone-html");
 const outputFile = path.join(rootDir, "abc-desk.standalone.html");
+const outputAssetsDir = path.join(rootDir, "assets");
 
 await fs.rm(tempDir, { recursive: true, force: true });
+await fs.rm(outputAssetsDir, { recursive: true, force: true });
 
 await build({
   configFile: path.join(rootDir, "vite.config.js"),
@@ -46,6 +48,7 @@ html = html.replace(
   /<link[^>]+href="https:\/\/fonts\.googleapis\.com[^"]+"[^>]*>\s*/g,
   "",
 );
+html = html.replace(/<link[^>]+rel="modulepreload"[^>]*>\s*/g, "");
 
 const cssMatches = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g)];
 for (const match of cssMatches) {
@@ -62,16 +65,10 @@ if (jsMatches.length !== 1) {
   throw new Error(`Expected exactly one module script, found ${jsMatches.length}.`);
 }
 
-const jsPath = path.join(tempDir, jsMatches[0][1]);
-const js = await fs.readFile(jsPath, "utf8");
-html = html.replace(
-  jsMatches[0][0],
-  `<script type="module">\n${js}\n</script>`,
-);
-
 html = html.replaceAll(/<link[^>]+rel="stylesheet"[^>]+href="[^"]+"\s*\/?>/g, "");
 
 await fs.writeFile(outputFile, html, "utf8");
+await fs.cp(path.join(tempDir, "assets"), outputAssetsDir, { recursive: true });
 await fs.rm(tempDir, { recursive: true, force: true });
 
 console.log(`Wrote ${path.basename(outputFile)}`);
