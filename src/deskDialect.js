@@ -201,6 +201,51 @@ const WOODWIND_NAMES = new Set([
   "ocarina",
 ]);
 
+const STRING_NAMES = new Set([
+  "violin",
+  "viola",
+  "cello",
+  "contrabass",
+  "fiddle",
+  "string-ensemble-1",
+  "string-ensemble-2",
+  "synth-strings-1",
+  "synth-strings-2",
+  "pizzicato-strings",
+  "tremolo-strings",
+  "strings",
+]);
+
+const BRASS_NAMES = new Set([
+  "trumpet",
+  "muted-trumpet",
+  "trombone",
+  "tuba",
+  "french-horn",
+  "brass-section",
+  "synth-brass-1",
+  "synth-brass-2",
+  "cornet",
+  "bugle",
+  "flugelhorn",
+  "baritone",
+  "euphonium",
+  "horn",
+]);
+
+const BASS_NAMES = new Set([
+  "acoustic-bass",
+  "electric-bass-finger",
+  "electric-bass-pick",
+  "fretless-bass",
+  "slap-bass-1",
+  "slap-bass-2",
+  "synth-bass-1",
+  "synth-bass-2",
+  "contrabass",
+  "tuba",
+]);
+
 /** @type {Record<string, { label: string, options: Record<string, number> }>} */
 export const TONES = {
   neutral: {
@@ -697,12 +742,22 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     for (const note of track) {
       if (note.volume == null || note.start == null || note.end == null) continue;
       const dur = Math.max(0.001, note.end - note.start);
-      if (dur <= HOLD_THRESHOLD) continue;
-      const woodwind = isWoodwindInstrument(note.instrument);
-      const t = Math.min(1, (dur - HOLD_THRESHOLD) / HOLD_SPAN);
-      const factor = woodwind
-        ? Math.max(MIN_FACTOR, 0.965 - 0.09 * Math.pow(t, 0.8))
-        : Math.max(MIN_FACTOR, 0.97 - 0.07 * Math.pow(t, 0.85));
+      const family = instrumentFamily(note.instrument);
+      const profile = familyMixProfile(family);
+      let factor = profile.base;
+      if (dur > HOLD_THRESHOLD) {
+        const t = Math.min(1, (dur - HOLD_THRESHOLD) / HOLD_SPAN);
+        factor *= Math.max(
+          MIN_FACTOR,
+          profile.holdBase - profile.holdDepth * Math.pow(t, family === "strings" ? 0.9 : 0.8),
+        );
+      }
+      if (profile.highCut && note.pitch >= profile.highCut) {
+        factor *= family === "woodwind" && note.pitch >= profile.highCut + 4 ? 0.9 : 0.95;
+      }
+      if (family === "brass" && note.pitch != null && note.pitch <= 50) {
+        factor *= 1.03;
+      }
       note.volume = Math.max(12, Math.round(note.volume * factor));
     }
   }
@@ -718,7 +773,17 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   }
   for (const group of buckets.values()) {
     if (group.length < 3) continue;
-    const stackFactor = Math.max(0.4, 1 / Math.sqrt(group.length * 0.55));
+    const family = group.some((note) => isWoodwindInstrument(note.instrument))
+      ? "woodwind"
+      : group.some((note) => instrumentFamily(note.instrument) === "brass")
+      ? "brass"
+      : group.some((note) => instrumentFamily(note.instrument) === "strings")
+      ? "strings"
+      : group.some((note) => instrumentFamily(note.instrument) === "bass")
+      ? "bass"
+      : "other";
+    const profile = familyMixProfile(family);
+    const stackFactor = Math.max(profile.stackFactor, 1 / Math.sqrt(group.length * 0.55));
     for (const note of group) {
       note.volume = Math.max(12, Math.round(note.volume * stackFactor));
     }
@@ -735,10 +800,22 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   }
   for (const group of pitchBuckets.values()) {
     if (group.length < 2) continue;
-    const woodwindGroup = group.some((note) => isWoodwindInstrument(note.instrument));
-    const pitchFactor = woodwindGroup
-      ? Math.max(0.5, 0.86 - 0.05 * Math.min(3, group.length - 2))
-      : Math.max(0.58, 0.9 - 0.03 * Math.min(3, group.length - 2));
+    const family = group.some((note) => isWoodwindInstrument(note.instrument))
+      ? "woodwind"
+      : group.some((note) => instrumentFamily(note.instrument) === "brass")
+      ? "brass"
+      : group.some((note) => instrumentFamily(note.instrument) === "strings")
+      ? "strings"
+      : group.some((note) => instrumentFamily(note.instrument) === "bass")
+      ? "bass"
+      : "other";
+    const profile = familyMixProfile(family);
+    const pitchFactor = Math.max(
+      profile.unisonFactor,
+      (family === "woodwind" ? 0.84 : family === "brass" ? 0.88 : 0.9) -
+        (family === "bass" ? 0.015 : family === "strings" ? 0.025 : 0.04) *
+          Math.min(3, group.length - 2),
+    );
     for (const note of group) {
       note.volume = Math.max(12, Math.round(note.volume * pitchFactor));
     }
@@ -782,11 +859,11 @@ function spreadVoicePan(source) {
   const count = countVoices(source);
   if (count <= 1) return undefined;
   if (count === 2) return [-0.28, 0.28];
-  const spread = Math.min(0.36, 1.2 / Math.max(2, count - 1));
+  const spread = Math.min(0.44, 1.35 / Math.max(2, count - 1));
   const pan = [];
   for (let i = 0; i < count; i++) {
     const offset = i - (count - 1) / 2;
-    pan.push(Math.max(-0.8, Math.min(0.8, Math.round(offset * spread * 100) / 100)));
+    pan.push(Math.max(-0.85, Math.min(0.85, Math.round(offset * spread * 100) / 100)));
   }
   return pan;
 }
@@ -812,11 +889,81 @@ function findDrumMarker(source, endChar) {
 }
 
 function isWoodwindInstrument(instrument) {
-  if (instrument == null) return false;
-  const name = String(instrument).trim().toLowerCase();
+  const name = normalizeInstrumentName(instrument);
   if (WOODWIND_NAMES.has(name)) return true;
   const program = Number(name);
   return Number.isInteger(program) && WOODWIND_PROGRAMS.has(program);
+}
+
+function normalizeInstrumentName(instrument) {
+  return String(instrument || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
+}
+
+function instrumentFamily(instrument) {
+  const name = normalizeInstrumentName(instrument);
+  if (!name) return "other";
+  if (WOODWIND_NAMES.has(name)) return "woodwind";
+  if (STRING_NAMES.has(name) || /^(violin|viola|cello|strings?|fiddle)/.test(name)) {
+    return "strings";
+  }
+  if (BRASS_NAMES.has(name) || /^(trumpet|trombone|tuba|horn|cornet|bugle|flugelhorn|baritone|euphonium)/.test(name)) {
+    return "brass";
+  }
+  if (BASS_NAMES.has(name) || /bass/.test(name)) return "bass";
+  return "other";
+}
+
+function familyMixProfile(family) {
+  switch (family) {
+    case "woodwind":
+      return {
+        base: 0.98,
+        holdBase: 0.965,
+        holdDepth: 0.09,
+        highCut: 84,
+        stackFactor: 0.86,
+        unisonFactor: 0.8,
+      };
+    case "strings":
+      return {
+        base: 1,
+        holdBase: 0.985,
+        holdDepth: 0.055,
+        highCut: 88,
+        stackFactor: 0.9,
+        unisonFactor: 0.86,
+      };
+    case "brass":
+      return {
+        base: 0.96,
+        holdBase: 0.975,
+        holdDepth: 0.075,
+        highCut: 80,
+        stackFactor: 0.88,
+        unisonFactor: 0.83,
+      };
+    case "bass":
+      return {
+        base: 1.02,
+        holdBase: 0.99,
+        holdDepth: 0.03,
+        highCut: 0,
+        stackFactor: 0.93,
+        unisonFactor: 0.9,
+      };
+    default:
+      return {
+        base: 1,
+        holdBase: 0.97,
+        holdDepth: 0.07,
+        highCut: 0,
+        stackFactor: 0.9,
+        unisonFactor: 0.86,
+      };
+  }
 }
 
 /**
