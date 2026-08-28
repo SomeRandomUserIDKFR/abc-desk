@@ -9,6 +9,12 @@ npm install
 npm run dev
 ```
 
+Export a single self-contained HTML file:
+
+```bash
+npm run export-html
+```
+
 ## Live site
 
 https://somerandomuseridkfr.github.io/abc-desk/
