@@ -724,6 +724,26 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     }
   }
 
+  const pitchBuckets = new Map();
+  for (const track of tracks) {
+    for (const note of track) {
+      if (note.volume == null || note.start == null || note.pitch == null) continue;
+      const key = `${Math.round(note.start * 64)}:${note.pitch}`;
+      if (!pitchBuckets.has(key)) pitchBuckets.set(key, []);
+      pitchBuckets.get(key).push(note);
+    }
+  }
+  for (const group of pitchBuckets.values()) {
+    if (group.length < 2) continue;
+    const woodwindGroup = group.some((note) => isWoodwindInstrument(note.instrument));
+    const pitchFactor = woodwindGroup
+      ? Math.max(0.5, 0.86 - 0.05 * Math.min(3, group.length - 2))
+      : Math.max(0.58, 0.9 - 0.03 * Math.min(3, group.length - 2));
+    for (const note of group) {
+      note.volume = Math.max(12, Math.round(note.volume * pitchFactor));
+    }
+  }
+
   addPercussionMarkers(tracks, ctx);
 
   return tracks;
@@ -756,6 +776,28 @@ function addPercussionMarkers(tracks, ctx) {
   for (const item of additions) {
     item.track.push(item.note);
   }
+}
+
+function spreadVoicePan(source) {
+  const count = countVoices(source);
+  if (count <= 1) return undefined;
+  if (count === 2) return [-0.28, 0.28];
+  const spread = Math.min(0.36, 1.2 / Math.max(2, count - 1));
+  const pan = [];
+  for (let i = 0; i < count; i++) {
+    const offset = i - (count - 1) / 2;
+    pan.push(Math.max(-0.8, Math.min(0.8, Math.round(offset * spread * 100) / 100)));
+  }
+  return pan;
+}
+
+function countVoices(source) {
+  const ids = new Set();
+  for (const line of String(source || "").split(/\r?\n/)) {
+    const m = line.trim().match(/^V:\s*([^\s]+)/i);
+    if (m) ids.add(m[1]);
+  }
+  return ids.size;
 }
 
 function findDrumMarker(source, endChar) {
@@ -863,6 +905,7 @@ export function deskAudioParams(meta) {
     ? undefined
     : meta.midiProgram ?? meta.instrument?.program;
   const forceInstrument = programToSoundfontName(program);
+  const pan = spreadVoicePan(meta.sourceText);
 
   const options = {
     chordsOff: false,
@@ -873,6 +916,7 @@ export function deskAudioParams(meta) {
       drum1: meta.drum1,
       drum2: meta.drum2,
     },
+    pan,
     sequenceCallback: (tracks, ctx) =>
       balanceHeldNotes(tracks, {
         forceInstrument: ctx?.forceInstrument ?? forceInstrument,
