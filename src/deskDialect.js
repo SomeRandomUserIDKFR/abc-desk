@@ -920,39 +920,39 @@ function familyMixProfile(family) {
   switch (family) {
     case "woodwind":
       return {
-        base: 0.98,
-        holdBase: 0.965,
-        holdDepth: 0.09,
-        highCut: 84,
-        stackFactor: 0.86,
-        unisonFactor: 0.8,
+        base: 0.95,
+        holdBase: 0.955,
+        holdDepth: 0.1,
+        highCut: 82,
+        stackFactor: 0.82,
+        unisonFactor: 0.76,
       };
     case "strings":
       return {
-        base: 1,
-        holdBase: 0.985,
-        holdDepth: 0.055,
-        highCut: 88,
-        stackFactor: 0.9,
-        unisonFactor: 0.86,
+        base: 1.03,
+        holdBase: 0.99,
+        holdDepth: 0.05,
+        highCut: 90,
+        stackFactor: 0.92,
+        unisonFactor: 0.9,
       };
     case "brass":
       return {
-        base: 0.96,
-        holdBase: 0.975,
-        holdDepth: 0.075,
-        highCut: 80,
-        stackFactor: 0.88,
-        unisonFactor: 0.83,
+        base: 0.95,
+        holdBase: 0.97,
+        holdDepth: 0.07,
+        highCut: 78,
+        stackFactor: 0.86,
+        unisonFactor: 0.82,
       };
     case "bass":
       return {
-        base: 1.02,
-        holdBase: 0.99,
-        holdDepth: 0.03,
+        base: 1,
+        holdBase: 0.995,
+        holdDepth: 0.02,
         highCut: 0,
-        stackFactor: 0.93,
-        unisonFactor: 0.9,
+        stackFactor: 0.95,
+        unisonFactor: 0.93,
       };
     default:
       return {
