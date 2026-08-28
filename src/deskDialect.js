@@ -751,6 +751,8 @@ export function balanceHeldNotes(tracks, ctx = {}) {
           MIN_FACTOR,
           profile.holdBase - profile.holdDepth * Math.pow(t, family === "strings" ? 0.9 : 0.8),
         );
+      } else {
+        factor *= profile.shortBoost ?? 1;
       }
       if (profile.highCut && note.pitch >= profile.highCut) {
         factor *= family === "woodwind" && note.pitch >= profile.highCut + 4 ? 0.9 : 0.95;
@@ -921,6 +923,7 @@ function familyMixProfile(family) {
     case "woodwind":
       return {
         base: 0.95,
+        shortBoost: 1.12,
         holdBase: 0.955,
         holdDepth: 0.1,
         highCut: 82,
@@ -930,6 +933,7 @@ function familyMixProfile(family) {
     case "strings":
       return {
         base: 1.03,
+        shortBoost: 1.08,
         holdBase: 0.99,
         holdDepth: 0.05,
         highCut: 90,
@@ -939,6 +943,7 @@ function familyMixProfile(family) {
     case "brass":
       return {
         base: 0.95,
+        shortBoost: 1.1,
         holdBase: 0.97,
         holdDepth: 0.07,
         highCut: 78,
@@ -948,6 +953,7 @@ function familyMixProfile(family) {
     case "bass":
       return {
         base: 1,
+        shortBoost: 1.05,
         holdBase: 0.995,
         holdDepth: 0.02,
         highCut: 0,
@@ -957,6 +963,7 @@ function familyMixProfile(family) {
     default:
       return {
         base: 1,
+        shortBoost: 1.08,
         holdBase: 0.97,
         holdDepth: 0.07,
         highCut: 0,
