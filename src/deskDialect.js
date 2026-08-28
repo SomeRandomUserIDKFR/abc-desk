@@ -282,9 +282,6 @@ export const TONES = {
   },
 };
 
-const DEFAULT_SOUND_FONT_URL =
-  "https://paulrosen.github.io/midi-js-soundfonts/MusyngKite/";
-
 const DEFAULT_DRUM_1 = resolveDrumSound("acoustic-snare");
 const DEFAULT_DRUM_2 = resolveDrumSound("bass-drum-1");
 
@@ -1060,7 +1057,6 @@ export function deskAudioParams(meta) {
   const options = {
     chordsOff: false,
     fadeLength: 320,
-    soundFontUrl: DEFAULT_SOUND_FONT_URL,
     callbackContext: {
       forceInstrument,
       sourceText: meta.sourceText,
