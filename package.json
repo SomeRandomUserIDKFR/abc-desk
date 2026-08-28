@@ -12,6 +12,7 @@
     "vite": "^8.1.1"
   },
   "dependencies": {
-    "abcjs": "^6.6.4"
+    "abcjs": "^6.6.4",
+    "jspdf": "^4.2.1"
   }
 }

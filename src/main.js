@@ -1,6 +1,7 @@
 import "./style.css";
 import abcjs from "abcjs";
 import "abcjs/abcjs-audio.css";
+import { jsPDF } from "jspdf";
 import {
   parseDeskHeaders,
   toStrictAbc,
@@ -158,6 +159,9 @@ app.innerHTML = `
           <button type="button" class="primary" id="render-now">Render</button>
           <button type="button" id="download-midi" title="Download current tune as MIDI">MIDI</button>
           <button type="button" id="download-wav" title="Download current tune as WAV">WAV</button>
+          <button type="button" id="download-pdf" title="Save the rendered score as PDF">PDF</button>
+          <button type="button" id="download-png" title="Save the rendered score as PNG">PNG</button>
+          <button type="button" id="download-jpeg" title="Save the rendered score as JPEG">JPEG</button>
         </div>
       </div>
       <div class="audio-row">
@@ -201,6 +205,9 @@ const lintList = document.querySelector("#lint-list");
 const lintCount = document.querySelector("#lint-count");
 const downloadMidiBtn = document.querySelector("#download-midi");
 const downloadWavBtn = document.querySelector("#download-wav");
+const downloadPdfBtn = document.querySelector("#download-pdf");
+const downloadPngBtn = document.querySelector("#download-png");
+const downloadJpegBtn = document.querySelector("#download-jpeg");
 const supportsAudio = abcjs.synth.supportsAudio();
 
 editor.value = DEFAULT_ABC;
@@ -248,6 +255,11 @@ function triggerDownloadFromUrl(
   document.body.removeChild(link);
 }
 
+function triggerDownloadFromBlob(blob, fileName) {
+  const url = window.URL.createObjectURL(blob);
+  triggerDownloadFromUrl(url, fileName);
+}
+
 function toMidiBytes(midiPayload) {
   if (midiPayload instanceof Uint8Array) return midiPayload;
   if (midiPayload instanceof ArrayBuffer) return new Uint8Array(midiPayload);
@@ -269,10 +281,122 @@ function toMidiBytes(midiPayload) {
   throw new Error("Unexpected MIDI payload format");
 }
 
+function getRenderedScoreSvg() {
+  const svg = paper.querySelector("svg");
+  if (!svg) {
+    throw new Error("Render a tune before saving the sheet music.");
+  }
+  return svg;
+}
+
+function getSvgDimensions(svg) {
+  const widthAttr = Number.parseFloat(svg.getAttribute("width"));
+  const heightAttr = Number.parseFloat(svg.getAttribute("height"));
+  if (Number.isFinite(widthAttr) && Number.isFinite(heightAttr)) {
+    return { width: widthAttr, height: heightAttr };
+  }
+  const viewBox = svg.viewBox && svg.viewBox.baseVal;
+  if (viewBox && viewBox.width > 0 && viewBox.height > 0) {
+    return { width: viewBox.width, height: viewBox.height };
+  }
+  const rect = svg.getBoundingClientRect();
+  if (rect.width > 0 && rect.height > 0) {
+    return { width: rect.width, height: rect.height };
+  }
+  throw new Error("Could not determine the score size.");
+}
+
+function cloneExportSvg(svg) {
+  const clone = svg.cloneNode(true);
+  clone.querySelectorAll(".abcjs-cursor, .abcjs-highlight").forEach((el) => {
+    el.remove();
+  });
+  return clone;
+}
+
+function svgToDataUrl(svg) {
+  const clone = cloneExportSvg(svg);
+  const serializer = new XMLSerializer();
+  let source = serializer.serializeToString(clone);
+  if (!/^<svg[^>]+xmlns=/i.test(source)) {
+    source = source.replace(
+      /^<svg\b/,
+      '<svg xmlns="http://www.w3.org/2000/svg"',
+    );
+  }
+  source = `<?xml version="1.0" encoding="UTF-8"?>\n${source}`;
+  const bytes = new TextEncoder().encode(source);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, slice);
+  }
+  return `data:image/svg+xml;base64,${btoa(binary)}`;
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Could not load the sheet music image."));
+    img.src = src;
+  });
+}
+
+async function renderScoreCanvas(scale = 2) {
+  const svg = getRenderedScoreSvg();
+  const { width, height } = getSvgDimensions(svg);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas is not available in this browser.");
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  const image = await loadImage(svgToDataUrl(svg));
+  ctx.drawImage(image, 0, 0, width, height);
+  return canvas;
+}
+
+async function saveScoreAsImage(mimeType, extension, quality) {
+  const canvas = await renderScoreCanvas(2);
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((result) => {
+      if (!result) {
+        reject(new Error(`Could not create ${extension.toUpperCase()} image.`));
+        return;
+      }
+      resolve(result);
+    }, mimeType, quality);
+  });
+  triggerDownloadFromBlob(blob, `${tuneFileStem()}.${extension}`);
+}
+
+async function saveScoreAsPdf() {
+  const canvas = await renderScoreCanvas(2);
+  const pngDataUrl = canvas.toDataURL("image/png");
+  const pageWidth = Math.max(1, Math.round(canvas.width * 0.75));
+  const pageHeight = Math.max(1, Math.round(canvas.height * 0.75));
+  const orientation = pageWidth >= pageHeight ? "landscape" : "portrait";
+  const pdf = new jsPDF({
+    orientation,
+    unit: "pt",
+    format: [pageWidth, pageHeight],
+    compress: true,
+  });
+  pdf.addImage(pngDataUrl, "PNG", 0, 0, pageWidth, pageHeight, undefined, "FAST");
+  triggerDownloadFromBlob(pdf.output("blob"), `${tuneFileStem()}.pdf`);
+}
+
 function updateDownloadButtons() {
   const hasTune = Boolean(lastVisualObj);
   downloadMidiBtn.disabled = !hasTune;
   downloadWavBtn.disabled = !hasTune || !supportsAudio;
+  downloadPdfBtn.disabled = !hasTune;
+  downloadPngBtn.disabled = !hasTune;
+  downloadJpegBtn.disabled = !hasTune;
 }
 
 class CursorControl {
@@ -610,6 +734,45 @@ downloadWavBtn.addEventListener("click", async () => {
     } catch {
       /* ignore cleanup errors */
     }
+  }
+});
+
+downloadPdfBtn.addEventListener("click", async () => {
+  try {
+    if (!lastVisualObj) {
+      setStatus("Render a tune before saving PDF.", true);
+      return;
+    }
+    await saveScoreAsPdf();
+    setStatus("Downloaded PDF sheet music.");
+  } catch (err) {
+    setStatus(`Could not save PDF: ${err.message ?? err}`, true);
+  }
+});
+
+downloadPngBtn.addEventListener("click", async () => {
+  try {
+    if (!lastVisualObj) {
+      setStatus("Render a tune before saving PNG.", true);
+      return;
+    }
+    await saveScoreAsImage("image/png", "png");
+    setStatus("Downloaded PNG sheet music.");
+  } catch (err) {
+    setStatus(`Could not save PNG: ${err.message ?? err}`, true);
+  }
+});
+
+downloadJpegBtn.addEventListener("click", async () => {
+  try {
+    if (!lastVisualObj) {
+      setStatus("Render a tune before saving JPEG.", true);
+      return;
+    }
+    await saveScoreAsImage("image/jpeg", "jpeg", 0.95);
+    setStatus("Downloaded JPEG sheet music.");
+  } catch (err) {
+    setStatus(`Could not save JPEG: ${err.message ?? err}`, true);
   }
 });
 
