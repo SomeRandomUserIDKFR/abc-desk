@@ -295,10 +295,18 @@ export const TONES = {
     label: "Sorrow",
     options: { soundFontVolumeMultiplier: 0.78, swing: 0 },
   },
+  aggressive: {
+    label: "Aggressive",
+    options: { soundFontVolumeMultiplier: 1.28, swing: 0 },
+  },
   swing: {
     label: "Swing",
     options: { soundFontVolumeMultiplier: 1, swing: 0.55 },
   },
+};
+
+const TONE_ALIASES = {
+  agressive: "aggressive",
 };
 
 const DEFAULT_DRUM_1 = resolveDrumSound("acoustic-snare");
@@ -338,9 +346,10 @@ export function resolveInstrument(raw) {
 export function resolveTone(raw) {
   if (!raw) return null;
   const key = raw.trim().toLowerCase().replace(/\s+/g, " ");
-  const hit = TONES[key];
+  const normalized = TONE_ALIASES[key] ?? key;
+  const hit = TONES[normalized];
   if (!hit) return null;
-  return { ...hit, name: key };
+  return { ...hit, name: normalized };
 }
 
 /**
@@ -600,7 +609,7 @@ export function parseDeskHeaders(source) {
     warnings.push(`Unknown Inst: “${instrumentRaw}” (try flute, violin, piano, or a GM number)`);
   }
   if (toneRaw && !tone) {
-    warnings.push(`Unknown Tone: “${toneRaw}” (try warm, bright, soft, rustic, upbeat, sorrow, swing, neutral)`);
+    warnings.push(`Unknown Tone: “${toneRaw}” (try warm, bright, soft, rustic, upbeat, sorrow, aggressive, swing, neutral)`);
   }
   if (drum1Raw && !resolveDrumSound(drum1Raw)) {
     warnings.push(`Unknown Drum1: “${drum1Raw}” (try acoustic-snare, bass-drum-1, closed-hi-hat, or a MIDI drum number 35-81)`);

@@ -6,10 +6,8 @@ import { build } from "vite";
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tempDir = path.join(rootDir, ".standalone-html");
 const outputFile = path.join(rootDir, "abc-desk.standalone.html");
-const outputAssetsDir = path.join(rootDir, "assets");
 
 await fs.rm(tempDir, { recursive: true, force: true });
-await fs.rm(outputAssetsDir, { recursive: true, force: true });
 
 await build({
   configFile: path.join(rootDir, "vite.config.js"),
@@ -54,21 +52,22 @@ const cssMatches = [...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]
 for (const match of cssMatches) {
   const cssPath = path.join(tempDir, match[1]);
   const css = await fs.readFile(cssPath, "utf8");
-  html = html.replace(
-    match[0],
-    `<style>\n${css}\n</style>`,
-  );
+  html = html.replace(match[0], `<style>\n${css}\n</style>`);
 }
 
-const jsMatches = [...html.matchAll(/<script[^>]+type="module"[^>]+src="([^"]+)"><\/script>/g)];
+const jsMatches = [...html.matchAll(/<script[^>]+type="module"[^>]+src="([^"]+)"[^>]*><\/script>/g)];
 if (jsMatches.length !== 1) {
   throw new Error(`Expected exactly one module script, found ${jsMatches.length}.`);
 }
 
+const jsSourcePath = path.join(tempDir, jsMatches[0][1]);
+const jsBundle = await fs.readFile(jsSourcePath, "utf8");
+const jsDataUri = `data:text/javascript;charset=utf-8,${encodeURIComponent(jsBundle)}`;
+html = html.replace(jsMatches[0][0], `<script type="module" src="${jsDataUri}"></script>`);
+
 html = html.replaceAll(/<link[^>]+rel="stylesheet"[^>]+href="[^"]+"\s*\/?>/g, "");
 
 await fs.writeFile(outputFile, html, "utf8");
-await fs.cp(path.join(tempDir, "assets"), outputAssetsDir, { recursive: true });
 await fs.rm(tempDir, { recursive: true, force: true });
 
-console.log(`Wrote ${path.basename(outputFile)}`);
+console.log(`Wrote ${path.basename(outputFile)} (fully self-contained)`);
