@@ -265,43 +265,62 @@ const FX_NAMES = new Set([
   "pad-8-sweep",
 ]);
 
+const KEYBOARD_NAMES = new Set([
+  "piano",
+  "bright-piano",
+  "electric-piano",
+  "harpsichord",
+  "organ",
+  "accordion",
+  "keyboard",
+]);
+
 /** @type {Record<string, { label: string, options: Record<string, number> }>} */
 export const TONES = {
   neutral: {
     label: "Neutral",
-    options: { soundFontVolumeMultiplier: 1, swing: 0 },
+    options: { soundFontVolumeMultiplier: 1, swing: 0, fadeLength: 320 },
+    toneMix: { attack: 1, sustain: 1, shortBoost: 1, holdBias: 1 },
   },
   warm: {
     label: "Warm",
-    options: { soundFontVolumeMultiplier: 0.88, swing: 0 },
+    options: { soundFontVolumeMultiplier: 0.78, swing: 0, fadeLength: 420 },
+    toneMix: { attack: 0.88, sustain: 0.84, shortBoost: 0.8, holdBias: 0.8 },
   },
   bright: {
     label: "Bright",
-    options: { soundFontVolumeMultiplier: 1.12, swing: 0 },
+    options: { soundFontVolumeMultiplier: 1.35, swing: 0, fadeLength: 220 },
+    toneMix: { attack: 1.28, sustain: 1.12, shortBoost: 1.2, holdBias: 1.08 },
   },
   soft: {
     label: "Soft",
-    options: { soundFontVolumeMultiplier: 0.7, swing: 0 },
+    options: { soundFontVolumeMultiplier: 0.58, swing: 0, fadeLength: 520 },
+    toneMix: { attack: 0.72, sustain: 0.7, shortBoost: 0.68, holdBias: 0.66 },
   },
   rustic: {
     label: "Rustic",
-    options: { soundFontVolumeMultiplier: 0.9, swing: 0.06 },
+    options: { soundFontVolumeMultiplier: 0.85, swing: 0.12, fadeLength: 360 },
+    toneMix: { attack: 1.05, sustain: 0.9, shortBoost: 1.08, holdBias: 0.88 },
   },
   upbeat: {
     label: "Upbeat",
-    options: { soundFontVolumeMultiplier: 1.05, swing: 0.18 },
+    options: { soundFontVolumeMultiplier: 1.18, swing: 0.25, fadeLength: 260 },
+    toneMix: { attack: 1.24, sustain: 1.06, shortBoost: 1.3, holdBias: 1.08 },
   },
   sorrow: {
     label: "Sorrow",
-    options: { soundFontVolumeMultiplier: 0.78, swing: 0 },
+    options: { soundFontVolumeMultiplier: 0.62, swing: 0, fadeLength: 620 },
+    toneMix: { attack: 0.75, sustain: 0.6, shortBoost: 0.7, holdBias: 0.58 },
   },
   aggressive: {
     label: "Aggressive",
-    options: { soundFontVolumeMultiplier: 1.28, swing: 0 },
+    options: { soundFontVolumeMultiplier: 1.9, swing: 0, fadeLength: 120 },
+    toneMix: { attack: 2.8, sustain: 1.2, shortBoost: 2.3, holdBias: 1.4, articulation: 1.18 },
   },
   swing: {
     label: "Swing",
-    options: { soundFontVolumeMultiplier: 1, swing: 0.55 },
+    options: { soundFontVolumeMultiplier: 1.08, swing: 0.55, fadeLength: 240 },
+    toneMix: { attack: 1.18, sustain: 1.02, shortBoost: 1.25, holdBias: 1.04 },
   },
 };
 
@@ -749,6 +768,8 @@ export function toStrictAbc(source) {
 export function balanceHeldNotes(tracks, ctx = {}) {
   if (!tracks?.length) return tracks;
 
+  const toneMix = ctx?.tone?.toneMix ?? {};
+
   // Note durations from abcjs are in whole notes; 2 quarter-note beats in 4/4
   // is 1/2 of a whole note.
   const HOLD_THRESHOLD = 0.5;
@@ -775,12 +796,20 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       let factor = profile.base;
       if (dur > HOLD_THRESHOLD) {
         const t = Math.min(1, (dur - HOLD_THRESHOLD) / HOLD_SPAN);
-        factor *= Math.max(
-          MIN_FACTOR,
-          profile.holdBase - profile.holdDepth * Math.pow(t, family === "strings" ? 0.9 : 0.8),
-        );
+        const holdToneFactor = dur > HOLD_THRESHOLD ? (toneMix.holdBias ?? 1) : 1;
+        factor *=
+          Math.max(
+            MIN_FACTOR,
+            profile.holdBase - profile.holdDepth * Math.pow(t, family === "strings" ? 0.9 : 0.8),
+          ) * holdToneFactor * (toneMix.sustain ?? 1);
       } else {
-        factor *= profile.shortBoost ?? 1;
+        factor *= (profile.shortBoost ?? 1) * (toneMix.shortBoost ?? 1) * (toneMix.attack ?? 1);
+      }
+      if (isViolinInstrument(note.instrument) && toneMix.attack && toneMix.attack > 1.5) {
+        factor *= 1.24;
+      }
+      if (isViolinInstrument(note.instrument) && toneMix.articulation) {
+        factor *= Math.min(1.7, 1 + toneMix.articulation * 0.18);
       }
       if (profile.highCut && note.pitch >= profile.highCut) {
         factor *= family === "woodwind" && note.pitch >= profile.highCut + 4 ? 0.9 : 0.95;
@@ -857,20 +886,24 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       const dur = Math.max(0.001, note.end - note.start);
       if (dur > HOLD_THRESHOLD) continue;
       const family = instrumentFamily(note.instrument);
-      const shortFactor = isViolinInstrument(note.instrument)
-        ? 1.88
+      const shortBase = isViolinInstrument(note.instrument)
+        ? 1.9
         : family === "woodwind"
-        ? 1.34
+        ? 1.18
         : family === "strings"
-        ? 1.28
+        ? 1.2
         : family === "brass"
-        ? 1.3
+        ? 1.24
         : family === "bass"
-        ? 1.14
-        : 1.22;
+        ? 1.08
+        : 1.18;
+      const articulationBoost = isViolinInstrument(note.instrument)
+        ? (toneMix.articulation ?? 1) * 0.6
+        : 0;
+      const shortFactor = shortBase + articulationBoost + (isViolinInstrument(note.instrument) ? (toneMix.attack ?? 1) * 0.55 : 0);
       let volume = Math.max(14, Math.round(note.volume * shortFactor));
       if (isViolinInstrument(note.instrument) && dur <= 0.25) {
-        volume = Math.max(16, Math.round(volume * 1.12 + 4));
+        volume = Math.max(16, Math.round(volume * (1 + (toneMix.attack ?? 1) * 0.14 + (toneMix.articulation ?? 1) * 0.1) + 6));
       }
       note.volume = volume;
     }
@@ -973,6 +1006,9 @@ function instrumentFamily(instrument) {
     return "brass";
   }
   if (BASS_NAMES.has(name) || /bass/.test(name)) return "bass";
+  if (KEYBOARD_NAMES.has(name) || /^(piano|bright-piano|electric-piano|harpsichord|organ|accordion|keyboard)/.test(name)) {
+    return "keyboard";
+  }
   if (FX_NAMES.has(name) || /^(fx|pad)-/.test(name)) return "fx";
   return "other";
 }
@@ -981,63 +1017,73 @@ function familyMixProfile(family) {
   switch (family) {
     case "woodwind":
       return {
-        base: 0.95,
-        shortBoost: 1.32,
-        holdBase: 0.93,
-        holdDepth: 0.11,
+        base: 0.93,
+        shortBoost: 1.18,
+        holdBase: 0.88,
+        holdDepth: 0.15,
         highCut: 82,
-        stackFactor: 0.82,
-        unisonFactor: 0.76,
+        stackFactor: 0.78,
+        unisonFactor: 0.7,
       };
     case "strings":
       return {
-        base: 1.03,
-        shortBoost: 1.22,
-        holdBase: 0.965,
-        holdDepth: 0.06,
+        base: 1.0,
+        shortBoost: 1.2,
+        holdBase: 0.96,
+        holdDepth: 0.08,
         highCut: 90,
-        stackFactor: 0.92,
-        unisonFactor: 0.9,
+        stackFactor: 0.9,
+        unisonFactor: 0.88,
       };
     case "brass":
       return {
-        base: 0.95,
-        shortBoost: 1.28,
-        holdBase: 0.95,
-        holdDepth: 0.08,
+        base: 0.94,
+        shortBoost: 1.24,
+        holdBase: 0.9,
+        holdDepth: 0.12,
         highCut: 78,
-        stackFactor: 0.86,
-        unisonFactor: 0.82,
+        stackFactor: 0.8,
+        unisonFactor: 0.75,
       };
     case "bass":
       return {
-        base: 1,
-        shortBoost: 1.14,
-        holdBase: 0.985,
-        holdDepth: 0.03,
+        base: 0.98,
+        shortBoost: 1.08,
+        holdBase: 0.98,
+        holdDepth: 0.04,
         highCut: 0,
-        stackFactor: 0.95,
-        unisonFactor: 0.93,
+        stackFactor: 0.98,
+        unisonFactor: 0.96,
+      };
+    case "keyboard":
+      return {
+        base: 1.02,
+        shortBoost: 1.12,
+        holdBase: 0.99,
+        holdDepth: 0.04,
+        highCut: 0,
+        stackFactor: 0.94,
+        unisonFactor: 0.9,
       };
     case "fx":
       return {
-        base: 1.05,
+        base: 0.92,
         shortBoost: 1.0,
-        holdBase: 0.99,
-        holdDepth: 0.01,
+        holdBase: 0.97,
+        holdDepth: 0.02,
         highCut: 0,
-        stackFactor: 1,
-        unisonFactor: 1,
+        stackFactor: 0.98,
+        unisonFactor: 0.98,
       };
     default:
       return {
-        base: 1,
-        shortBoost: 1.2,
-        holdBase: 0.95,
-        holdDepth: 0.08,
+        base: 0.98,
+        shortBoost: 1.16,
+        holdBase: 0.94,
+        holdDepth: 0.09,
         highCut: 0,
-        stackFactor: 0.9,
-        unisonFactor: 0.86,
+        stackFactor: 0.88,
+        unisonFactor: 0.84,
       };
   }
 }
@@ -1138,6 +1184,7 @@ export function deskAudioParams(meta) {
       sourceText: meta.sourceText,
       drum1: meta.drum1,
       drum2: meta.drum2,
+      tone: meta.tone,
     },
     pan,
     sequenceCallback: (tracks, ctx) =>
@@ -1146,6 +1193,7 @@ export function deskAudioParams(meta) {
         sourceText: ctx?.sourceText ?? meta.sourceText,
         drum1: ctx?.drum1 ?? meta.drum1,
         drum2: ctx?.drum2 ?? meta.drum2,
+        tone: ctx?.tone ?? meta.tone,
       }),
   };
 
