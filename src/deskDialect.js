@@ -842,9 +842,13 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       ? "bass"
       : "other";
     const profile = familyMixProfile(family);
-    const stackFactor = Math.max(profile.stackFactor, 1 / Math.sqrt(group.length * 0.55));
+    const stackFactor = Math.max(
+      profile.stackFactor,
+      1 / Math.sqrt(group.length * 0.55),
+    );
+    const chordPenalty = group.length >= 4 ? Math.max(0.52, 1.1 / Math.sqrt(group.length)) : 1;
     for (const note of group) {
-      note.volume = Math.max(12, Math.round(note.volume * stackFactor));
+      note.volume = Math.max(12, Math.round(note.volume * stackFactor * chordPenalty));
     }
   }
 
@@ -880,12 +884,23 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     }
   }
 
+  const sameStartBuckets = new Map();
+  for (const track of tracks) {
+    for (const note of track) {
+      if (note.volume == null || note.start == null) continue;
+      const key = Math.round(note.start * 64);
+      if (!sameStartBuckets.has(key)) sameStartBuckets.set(key, []);
+      sameStartBuckets.get(key).push(note);
+    }
+  }
   for (const track of tracks) {
     for (const note of track) {
       if (note.volume == null || note.start == null || note.end == null) continue;
       const dur = Math.max(0.001, note.end - note.start);
       if (dur > HOLD_THRESHOLD) continue;
       const family = instrumentFamily(note.instrument);
+      const simultaneousCount = sameStartBuckets.get(Math.round(note.start * 64))?.length ?? 1;
+      const denseChordFactor = simultaneousCount >= 4 ? 0.48 : simultaneousCount >= 3 ? 0.72 : 1;
       const shortBase = isViolinInstrument(note.instrument)
         ? 1.9
         : family === "woodwind"
@@ -900,10 +915,18 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       const articulationBoost = isViolinInstrument(note.instrument)
         ? (toneMix.articulation ?? 1) * 0.6
         : 0;
-      const shortFactor = shortBase + articulationBoost + (isViolinInstrument(note.instrument) ? (toneMix.attack ?? 1) * 0.55 : 0);
+      const attackBoost = isViolinInstrument(note.instrument) ? (toneMix.attack ?? 1) * 0.25 : 0;
+      const shortFactor =
+        (shortBase + articulationBoost * 0.4 + attackBoost) * denseChordFactor;
       let volume = Math.max(14, Math.round(note.volume * shortFactor));
       if (isViolinInstrument(note.instrument) && dur <= 0.25) {
-        volume = Math.max(16, Math.round(volume * (1 + (toneMix.attack ?? 1) * 0.14 + (toneMix.articulation ?? 1) * 0.1) + 6));
+        const aggressiveTransient = simultaneousCount >= 4 ? 0.25 : 1;
+        volume = Math.max(
+          16,
+          Math.round(
+            volume * (1 + (toneMix.attack ?? 1) * 0.08 + (toneMix.articulation ?? 1) * 0.06) * aggressiveTransient + 5,
+          ),
+        );
       }
       note.volume = volume;
     }
