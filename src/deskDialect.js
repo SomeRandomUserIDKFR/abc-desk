@@ -267,13 +267,20 @@ const FX_NAMES = new Set([
 
 const KEYBOARD_NAMES = new Set([
   "piano",
+  "acoustic-grand-piano",
   "bright-piano",
+  "bright-acoustic-piano",
   "electric-piano",
   "harpsichord",
   "organ",
   "accordion",
   "keyboard",
 ]);
+
+const KEYBOARD_PITCH_RANGE = {
+  min: 21, // A0
+  max: 108, // C8
+};
 
 /** @type {Record<string, { label: string, options: Record<string, number> }>} */
 export const TONES = {
@@ -314,8 +321,8 @@ export const TONES = {
   },
   aggressive: {
     label: "Aggressive",
-    options: { soundFontVolumeMultiplier: 1.9, swing: 0, fadeLength: 120 },
-    toneMix: { attack: 2.8, sustain: 1.2, shortBoost: 2.3, holdBias: 1.4, articulation: 1.18 },
+    options: { soundFontVolumeMultiplier: 1.35, swing: 0, fadeLength: 180 },
+    toneMix: { attack: 1.9, sustain: 1.1, shortBoost: 1.65, holdBias: 1.2, articulation: 1.05 },
   },
   swing: {
     label: "Swing",
@@ -785,6 +792,12 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     }
   }
 
+  for (const track of tracks) {
+    for (const note of track) {
+      clampPitchForSoundfont(note);
+    }
+  }
+
   enhanceDynamicRamps(tracks);
 
   for (const track of tracks) {
@@ -817,7 +830,8 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       if (family === "brass" && note.pitch != null && note.pitch <= 50) {
         factor *= 1.03;
       }
-      note.volume = Math.max(12, Math.round(note.volume * factor));
+      const volumeCap = (toneMix.attack ?? 1) > 1.5 ? 108 : 118;
+      note.volume = Math.max(12, Math.min(volumeCap, Math.round(note.volume * factor)));
     }
   }
 
@@ -923,12 +937,15 @@ export function balanceHeldNotes(tracks, ctx = {}) {
         const aggressiveTransient = simultaneousCount >= 4 ? 0.25 : 1;
         volume = Math.max(
           16,
-          Math.round(
-            volume * (1 + (toneMix.attack ?? 1) * 0.08 + (toneMix.articulation ?? 1) * 0.06) * aggressiveTransient + 5,
+          Math.min(
+            108,
+            Math.round(
+              volume * (1 + (toneMix.attack ?? 1) * 0.08 + (toneMix.articulation ?? 1) * 0.06) * aggressiveTransient + 5,
+            ),
           ),
         );
       }
-      note.volume = volume;
+      note.volume = Math.min(108, volume);
     }
   }
 
@@ -1018,6 +1035,15 @@ function normalizeInstrumentName(instrument) {
     .replace(/[_\s]+/g, "-");
 }
 
+function clampPitchForSoundfont(note) {
+  if (note?.pitch == null) return;
+  const pitch = Number(note.pitch);
+  if (!Number.isFinite(pitch)) return;
+  const family = instrumentFamily(note.instrument);
+  if (family !== "keyboard") return;
+  note.pitch = Math.max(KEYBOARD_PITCH_RANGE.min, Math.min(KEYBOARD_PITCH_RANGE.max, Math.round(pitch)));
+}
+
 function instrumentFamily(instrument) {
   const name = normalizeInstrumentName(instrument);
   if (!name) return "other";
@@ -1029,7 +1055,7 @@ function instrumentFamily(instrument) {
     return "brass";
   }
   if (BASS_NAMES.has(name) || /bass/.test(name)) return "bass";
-  if (KEYBOARD_NAMES.has(name) || /^(piano|bright-piano|electric-piano|harpsichord|organ|accordion|keyboard)/.test(name)) {
+  if (KEYBOARD_NAMES.has(name) || /^(acoustic-grand-piano|bright-acoustic-piano|piano|bright-piano|electric-piano|harpsichord|organ|accordion|keyboard)/.test(name)) {
     return "keyboard";
   }
   if (FX_NAMES.has(name) || /^(fx|pad)-/.test(name)) return "fx";
