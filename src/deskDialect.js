@@ -992,8 +992,8 @@ export function balanceHeldNotes(tracks, ctx = {}) {
 
 function applyHumanization(tracks, humanize) {
   // Keep the public 0–1 control range while making moderate values audible.
-  const amount = Math.max(0, Math.min(1, Number(humanize?.amount ?? 0) * 2));
-  if (!amount) return;
+  const baseAmount = Math.max(0, Math.min(1, Number(humanize?.amount ?? 0) * 2));
+  if (!baseAmount) return;
 
   for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
     const track = tracks[trackIndex];
@@ -1002,6 +1002,7 @@ function applyHumanization(tracks, humanize) {
       if (note.pitch == null || note.start == null || note.end == null) continue;
       const family = instrumentFamily(note.instrument);
       if (family === "fx") continue;
+      const amount = dynamicHumanAmount(baseAmount, note.start, trackIndex, noteIndex);
 
       const dur = Math.max(0.001, note.end - note.start);
       const seedBase = `${trackIndex}:${noteIndex}:${Math.round(note.start * 512)}:${note.pitch}:${note.instrument || ""}`;
@@ -1062,6 +1063,15 @@ function applyHumanization(tracks, humanize) {
       }
     }
   }
+}
+
+function dynamicHumanAmount(baseAmount, start, trackIndex, noteIndex) {
+  const phrasePhase = start * 0.72 + trackIndex * 0.37;
+  const slowBreath = Math.sin(phrasePhase) * 0.12;
+  const phraseNoise = stableSignedNoise(
+    `human-phrase:${trackIndex}:${Math.floor(start / 2)}:${noteIndex % 4}`,
+  ) * 0.08;
+  return Math.max(0, Math.min(1, baseAmount * (1 + slowBreath + phraseNoise)));
 }
 
 function familyDurationDrift(family, instrument) {
