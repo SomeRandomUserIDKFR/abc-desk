@@ -79,7 +79,7 @@ Put `%%MIDI program` **before** `K:` (in the header). After `K:` / mid-body it c
 
 - **Inst: / %%MIDI program** — GM instrument for playback (`flute`, `violin`, `atmosphere`, or `0`–`127`)
 - **Tone:** playback character — `neutral`, `warm`, `bright`, `soft`, `rustic`, `upbeat`, `sorrow`, `emotional`, `aggressive`, `swing`
-- **Room:** experimental Web Audio reverb — `dry`, `studio`, `chamber`, `concert`, `cathedral` (active in `#testingframework`)
+- **Room:** experimental Web Audio acoustics — `dry`, `studio`, `chamber`, `concert`, `cathedral` (active in `#testingframework`). Concert models hall-like pre-delay, asymmetric early reflections, stereo width, and a frequency-damped late field; WAV export uses the same room model.
 - **Players:** experimental ensemble size, `1`–`32`; affects per-voice variation and placement
 - **Distance:** experimental player spacing, `0`–`1`; increases stereo spread and room send
 - **Human: / Imperfect:** optional stacking humanization amount from `0` to `1` (`Human: 0.35`, `Imperfect: 0.7`, `%%desk-human 0.45`). The value is internally doubled and capped at full strength, so `0.5` is approximately the former maximum. It adds repeatable rubato, sound/volume variation, violin and bowed-string pressure/release imperfections, and slight cents drift for tunable instruments such as strings, woodwinds, brass, and bass. The intensity gently breathes over phrases instead of staying perfectly flat, and crescendo/diminuendo ramps receive small non-linear dynamic deviations. `0.1`–`0.2` is subtle; `0.2`–`0.35` is more expressive.
@@ -93,6 +93,10 @@ Put `%%MIDI program` **before** `K:` (in the header). After `K:` / mid-body it c
 | `!grit!` `!whisper!` `!snap!` `!smear!` `!choke!` | attack / color marks |
 | `!ascent!` | rising approach — label + slide |
 | `!cluster!c` / `!cluster5!e` | chord cluster around the note |
+
+ABC slurs such as `(ABc` use dedicated experimental violin articulation: notes
+inside the slur receive a tiny bow-continuity overlap and softened re-attacks,
+while detached notes retain their normal bow changes and attacks.
 | `!xhead!` `!harmonic!` `!triangle!` `!rhythmhead!` | notehead styles |
 | `!crescendo(!` … `!crescendo)!` | hairpin up (Desk reshapes the ramp) |
 | `!diminuendo(!` … / `!descendo(!` | hairpin down (alias ok) |

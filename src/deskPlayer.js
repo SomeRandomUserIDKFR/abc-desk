@@ -319,36 +319,42 @@ export function createTestingPlayer({
     const input = context.createGain();
     const dry = context.createGain();
     const wet = context.createGain();
+    const preDelay = context.createDelay(0.2);
+    const wetFilter = context.createBiquadFilter();
     const convolver = context.createConvolver();
     const reflections = [
-      { delay: 0.013, level: 0.11, pan: -0.55 },
-      { delay: 0.027, level: 0.08, pan: 0.48 },
-      { delay: 0.043, level: 0.05, pan: -0.25 },
+      { delay: 0.011, level: 0.52, pan: -0.72 },
+      { delay: 0.019, level: 0.37, pan: 0.64 },
+      { delay: 0.031, level: 0.28, pan: -0.38 },
+      { delay: 0.047, level: 0.2, pan: 0.48 },
+      { delay: 0.067, level: 0.13, pan: -0.18 },
     ];
     const length = Math.max(1, Math.ceil(context.sampleRate * room.decay));
     const impulse = context.createBuffer(2, length, context.sampleRate);
-    for (let channel = 0; channel < impulse.numberOfChannels; channel++) {
-      const data = impulse.getChannelData(channel);
-      for (let index = 0; index < length; index++) {
-        data[index] = (Math.random() * 2 - 1) * Math.pow(1 - index / length, 2.5);
-      }
-    }
+    fillRoomImpulse(impulse, room);
     convolver.buffer = impulse;
     const spacing = Math.max(0, Math.min(1, Number(distance) || 0));
     const playerCount = Math.max(1, Number(players) || 1);
     const directLevel = 1 - spacing * 0.28;
     dry.gain.value = directLevel * (1 - room.mix);
     wet.gain.value = Math.min(0.6, room.mix + spacing * 0.18);
+    preDelay.delayTime.value = room.predelay ?? 0;
+    wetFilter.type = "lowpass";
+    wetFilter.frequency.value = Math.max(1800, 12000 * (1 - (room.damping ?? 0.4) * 0.72));
+    wetFilter.Q.value = 0.35;
     input.connect(dry).connect(context.destination);
-    input.connect(convolver).connect(wet).connect(context.destination);
+    input.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(context.destination);
     for (const reflection of reflections) {
       const delay = context.createDelay(0.08);
       const reflectionGain = context.createGain();
       const reflectionPan = context.createStereoPanner();
       delay.delayTime.value = reflection.delay;
       reflectionGain.gain.value =
-        reflection.level * (1 - spacing * 0.22) * Math.min(1.2, playerCount / 4);
-      reflectionPan.pan.value = reflection.pan * Math.min(1, spacing + 0.2);
+        reflection.level *
+        (room.earlyLevel ?? 0.15) *
+        (1 - spacing * 0.22) *
+        Math.min(1.2, playerCount / 4);
+      reflectionPan.pan.value = reflection.pan * (room.width ?? 0.6) * Math.min(1, spacing + 0.2);
       input.connect(delay).connect(reflectionGain).connect(reflectionPan).connect(context.destination);
     }
     nextSynth.directSource.forEach((source, index) => {
@@ -369,6 +375,38 @@ export function createTestingPlayer({
 
 }
 
+function fillRoomImpulse(impulse, room) {
+  const damping = room.damping ?? 0.4;
+  const decay = Math.max(0.05, room.decay ?? 1);
+  const seed = hashString(room.name ?? room.label ?? "room");
+  for (let channel = 0; channel < impulse.numberOfChannels; channel++) {
+    const data = impulse.getChannelData(channel);
+    for (let index = 0; index < data.length; index++) {
+      const t = index / data.length;
+      const noise = stableNoise(seed + channel * 31, index);
+      const shimmer = stableNoise(seed + channel * 47, Math.floor(index / 37));
+      const envelope = Math.pow(1 - t, 1.35 + damping * 2.1);
+      const highFrequencyLoss = Math.exp(-t * (1.8 + damping * 6.2));
+      data[index] = (noise * 0.78 + shimmer * 0.22) * envelope * highFrequencyLoss;
+    }
+  }
+}
+
+function hashString(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function stableNoise(seed, index) {
+  let value = (seed + Math.imul(index + 1, 374761393)) | 0;
+  value = Math.imul(value ^ (value >>> 13), 1274126177);
+  return ((value ^ (value >>> 16)) / 2147483648) * 2 - 1;
+}
+
 async function renderRoomWav(audioBuffer, room) {
   const OfflineContext =
     window.OfflineAudioContext || window.webkitOfflineAudioContext;
@@ -378,7 +416,7 @@ async function renderRoomWav(audioBuffer, room) {
   const tail = Math.ceil(room.decay * audioBuffer.sampleRate);
   const context = new OfflineContext(
     audioBuffer.numberOfChannels,
-    audioBuffer.length + tail,
+    audioBuffer.length + tail + Math.ceil((room.predelay ?? 0) * audioBuffer.sampleRate),
     audioBuffer.sampleRate,
   );
   const source = context.createBufferSource();
@@ -386,19 +424,35 @@ async function renderRoomWav(audioBuffer, room) {
   const input = context.createGain();
   const dry = context.createGain();
   const wet = context.createGain();
+  const preDelay = context.createDelay(0.2);
+  const wetFilter = context.createBiquadFilter();
   const convolver = context.createConvolver();
   const impulse = context.createBuffer(2, Math.max(1, tail), audioBuffer.sampleRate);
-  for (let channel = 0; channel < impulse.numberOfChannels; channel++) {
-    const data = impulse.getChannelData(channel);
-    for (let index = 0; index < data.length; index++) {
-      data[index] = (Math.random() * 2 - 1) * Math.pow(1 - index / data.length, 2.5);
-    }
-  }
+  fillRoomImpulse(impulse, room);
   convolver.buffer = impulse;
   dry.gain.value = 1 - room.mix;
   wet.gain.value = room.mix;
+  preDelay.delayTime.value = room.predelay ?? 0;
+  wetFilter.type = "lowpass";
+  wetFilter.frequency.value = Math.max(1800, 12000 * (1 - (room.damping ?? 0.4) * 0.72));
+  wetFilter.Q.value = 0.35;
   input.connect(dry).connect(context.destination);
-  input.connect(convolver).connect(wet).connect(context.destination);
+  input.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(context.destination);
+  for (const reflection of [
+    { delay: 0.011, level: 0.52, pan: -0.72 },
+    { delay: 0.019, level: 0.37, pan: 0.64 },
+    { delay: 0.031, level: 0.28, pan: -0.38 },
+    { delay: 0.047, level: 0.2, pan: 0.48 },
+    { delay: 0.067, level: 0.13, pan: -0.18 },
+  ]) {
+    const delay = context.createDelay(0.08);
+    const reflectionGain = context.createGain();
+    const reflectionPan = context.createStereoPanner();
+    delay.delayTime.value = reflection.delay;
+    reflectionGain.gain.value = reflection.level * (room.earlyLevel ?? 0.15);
+    reflectionPan.pan.value = reflection.pan * (room.width ?? 0.6);
+    input.connect(delay).connect(reflectionGain).connect(reflectionPan).connect(context.destination);
+  }
   source.connect(input);
   source.start();
   return encodeWav(await context.startRendering());

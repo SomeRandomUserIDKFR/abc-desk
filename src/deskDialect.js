@@ -338,11 +338,11 @@ export const TONES = {
 };
 
 export const ROOMS = {
-  dry: { label: "Dry", decay: 0.15, mix: 0 },
-  studio: { label: "Studio", decay: 0.35, mix: 0.08 },
-  chamber: { label: "Chamber", decay: 0.8, mix: 0.14 },
-  concert: { label: "Concert Hall", decay: 1.7, mix: 0.2 },
-  cathedral: { label: "Cathedral", decay: 3.2, mix: 0.28 },
+  dry: { label: "Dry", decay: 0.15, mix: 0, predelay: 0, damping: 0.2, earlyLevel: 0, width: 0 },
+  studio: { label: "Studio", decay: 0.35, mix: 0.08, predelay: 0.008, damping: 0.28, earlyLevel: 0.08, width: 0.35 },
+  chamber: { label: "Chamber", decay: 0.8, mix: 0.14, predelay: 0.014, damping: 0.34, earlyLevel: 0.13, width: 0.55 },
+  concert: { label: "Concert Hall", decay: 2.05, mix: 0.24, predelay: 0.022, damping: 0.42, earlyLevel: 0.22, width: 0.82 },
+  cathedral: { label: "Cathedral", decay: 3.2, mix: 0.28, predelay: 0.032, damping: 0.52, earlyLevel: 0.2, width: 0.9 },
 };
 
 const TONE_ALIASES = {
@@ -1046,6 +1046,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       ctx?.players,
       ctx?.expressionExpansion,
     );
+    applyViolinArticulation(tracks, humanAmount);
   }
   for (const track of tracks) {
     track.sort((a, b) => {
@@ -1074,6 +1075,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       );
       if (!notes.length) continue;
 
+      const phraseProfile = createPlayerPhraseProfile(playerCount, trackIndex);
       let phraseStart = 0;
       for (let index = 0; index < notes.length; index++) {
         const note = notes[index];
@@ -1082,25 +1084,35 @@ export function balanceHeldNotes(tracks, ctx = {}) {
         const gap = next ? Math.max(0, next.start - note.end) : 0;
         const previous = notes[index - 1];
         const leap = previous ? Math.abs(Number(note.pitch) - Number(previous.pitch)) : 0;
-        if (index > 0 && (gap > 0.08 || leap >= 7 || duration > 2.5)) {
+        if (index > 0 && (gap > phraseProfile.gapThreshold || leap >= phraseProfile.leapThreshold || duration > 2.5)) {
           phraseStart = index;
         }
         const phraseLength = Math.max(1, Math.min(12, index - phraseStart + 1));
         const phrasePosition =
-          phraseLength <= 1 ? 0 : Math.min(1, (index - phraseStart) / 7);
-        const arc = Math.sin(phrasePosition * Math.PI);
+          phraseLength <= 1
+            ? phraseProfile.arcOffset
+            : Math.min(1, (index - phraseStart) / phraseProfile.arcSpan);
+        const arc = Math.max(
+          0,
+          Math.min(1, Math.sin((phrasePosition + phraseProfile.arcOffset) * Math.PI)),
+        );
         const expressionArc = expressionExpansion
-          ? 1 + (arc - 0.25) * 0.28 * humanAmount
+          ? 1 + (arc - 0.25) * phraseProfile.expressionDepth * humanAmount
           : 1;
         const playerNoise = stableSignedNoise(
           `player:${playerCount}:${trackIndex}:${index}:${note.start}:${note.pitch}`,
         );
-        const playerTiming = playerCount > 1 ? playerNoise * 0.004 * humanAmount : 0;
+        const breath = Math.sin(note.start * phraseProfile.breathRate + phraseProfile.breathPhase);
+        const playerTiming =
+          playerCount > 1
+            ? (playerNoise * 0.003 + breath * phraseProfile.timingBreath) * humanAmount
+            : 0;
         note.start = Math.max(0, note.start + playerTiming);
         note.end = Math.max(note.start + 0.01, note.end + playerTiming);
 
         if (note.volume != null) {
-          const phraseFactor = (0.91 + arc * 0.13 * humanAmount) * expressionArc;
+          const phraseFactor =
+            (0.91 + arc * phraseProfile.arcDepth * humanAmount) * expressionArc;
           const playerFactor =
             1 + playerNoise * Math.min(0.06, (playerCount - 1) * 0.006) * humanAmount;
           note.volume = Math.max(
@@ -1118,19 +1130,27 @@ export function balanceHeldNotes(tracks, ctx = {}) {
         }
 
         if (expressionExpansion && note.volume != null && duration >= 0.3) {
-          const sustain = 1 + Math.sin((index + trackIndex) * 0.73) * 0.045 * humanAmount;
+          const sustain =
+            1 +
+            Math.sin(index * phraseProfile.sustainRate + phraseProfile.breathPhase) *
+              phraseProfile.sustainDepth *
+              humanAmount;
           note.volume = Math.max(10, Math.min(118, Math.round(note.volume * sustain)));
         }
 
         if (note.volume != null) {
-          const bowDirection = index % 2 === 0 ? 1 : -1;
-          const bowChange = (0.018 * bowDirection + playerNoise * 0.022) * humanAmount;
+          const bowDirection = (index + phraseProfile.bowOffset) % 2 === 0 ? 1 : -1;
+          const bowChange =
+            (phraseProfile.bowBias * bowDirection + playerNoise * 0.022) * humanAmount;
           note.volume = Math.max(10, Math.min(118, Math.round(note.volume * (1 + bowChange))));
         }
 
         if (duration >= 0.45) {
-          const vibratoPhase = stableUnitNoise(`vibrato:${index}:${note.start}:${note.pitch}`);
-          const vibratoDepth = Math.min(14, 3 + duration * 2.5) * humanAmount;
+          const vibratoPhase = stableUnitNoise(
+            `vibrato:${trackIndex}:${phraseProfile.seed}:${index}:${note.start}:${note.pitch}`,
+          );
+          const vibratoDepth =
+            Math.min(14, 3 + duration * 2.5) * phraseProfile.vibratoDepth * humanAmount;
           note.cents =
             (Number(note.cents) || 0) +
             Math.round((vibratoPhase - 0.5) * vibratoDepth * 10) / 10;
@@ -1138,12 +1158,69 @@ export function balanceHeldNotes(tracks, ctx = {}) {
             note.cents += Math.round(playerNoise * Math.min(2.5, playerCount * 0.12) * 10) / 10;
           }
         }
+
       }
     }
+  }
+  function createPlayerPhraseProfile(playerCount, trackIndex) {
+    const seed = `phrase-player:${playerCount}:${trackIndex}`;
+    return {
+      seed,
+      gapThreshold: 0.06 + stableUnitNoise(`${seed}:gap`) * 0.05,
+      leapThreshold: 6 + Math.floor(stableUnitNoise(`${seed}:leap`) * 3),
+      arcOffset: (stableUnitNoise(`${seed}:offset`) - 0.5) * 0.16,
+      arcSpan: 5.5 + stableUnitNoise(`${seed}:span`) * 3.5,
+      arcDepth: 0.1 + stableUnitNoise(`${seed}:arc`) * 0.07,
+      expressionDepth: 0.22 + stableUnitNoise(`${seed}:expression`) * 0.14,
+      breathRate: 0.48 + stableUnitNoise(`${seed}:breath-rate`) * 0.22,
+      breathPhase: stableUnitNoise(`${seed}:breath-phase`) * Math.PI * 2,
+      timingBreath: stableSignedNoise(`${seed}:timing`) * 0.0012,
+      sustainRate: 0.55 + stableUnitNoise(`${seed}:sustain`) * 0.34,
+      sustainDepth: 0.025 + stableUnitNoise(`${seed}:sustain-depth`) * 0.035,
+      bowOffset: Math.floor(stableUnitNoise(`${seed}:bow`) * 2),
+      bowBias: 0.014 + stableUnitNoise(`${seed}:bow-bias`) * 0.012,
+      vibratoDepth: 0.85 + stableUnitNoise(`${seed}:vibrato`) * 0.3,
+    };
   }
   addPercussionMarkers(tracks, ctx);
 
   return tracks;
+}
+
+function applyViolinArticulation(tracks, humanAmount) {
+  for (const track of tracks) {
+    const notes = track
+      .filter(
+        (event) =>
+          event.cmd === "note" &&
+          isViolinInstrument(event.instrument) &&
+          Number.isFinite(Number(event.start)) &&
+          Number.isFinite(Number(event.end)),
+      )
+      .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+
+    for (let index = 0; index < notes.length - 1; index++) {
+      const note = notes[index];
+      const next = notes[index + 1];
+      const duration = Math.max(0.001, note.end - note.start);
+      const step = Math.max(0, next.start - note.start);
+      const slurred =
+        note.endType === "tenuto" ||
+        Number(note.gap) < 0;
+      if (!slurred || step <= 0 || duration < 0.08) continue;
+
+      // Let a slurred violin note overlap its successor slightly. The small
+      // attack reduction keeps the sound connected without flattening accents.
+      const overlap = Math.min(0.012, step * 0.08) * (0.75 + humanAmount * 0.25);
+      note.end = Math.max(note.start + 0.01, Math.min(next.start + overlap, note.end + overlap));
+      if (note.volume != null) {
+        note.volume = Math.max(12, Math.round(note.volume * (0.96 - humanAmount * 0.035)));
+      }
+      if (next.volume != null) {
+        next.volume = Math.max(12, Math.round(next.volume * (0.985 + humanAmount * 0.02)));
+      }
+    }
+  }
 }
 
 function applyHumanization(tracks, humanize) {
