@@ -811,6 +811,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
 
   const toneMix = ctx?.tone?.toneMix ?? {};
   const humanize = ctx?.humanize;
+  const humanAmount = Math.max(0, Math.min(1, Number(humanize?.amount ?? 0) * 2));
 
   // Note durations from abcjs are in whole notes; 2 quarter-note beats in 4/4
   // is 1/2 of a whole note.
@@ -833,7 +834,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     }
   }
 
-  enhanceDynamicRamps(tracks);
+  enhanceDynamicRamps(tracks, humanAmount);
 
   for (const track of tracks) {
     for (const note of track) {
@@ -1308,7 +1309,7 @@ function familyMixProfile(family) {
  * Find stepwise crescendo/diminuendo runs and reshape to a stronger curve.
  * abcjs only bumps ~50 velocity over the span; we stretch and ease it.
  */
-function enhanceDynamicRamps(tracks) {
+function enhanceDynamicRamps(tracks, humanAmount = 0) {
   for (const track of tracks) {
     if (!track?.length) continue;
     const notes = track
@@ -1332,7 +1333,7 @@ function enhanceDynamicRamps(tracks) {
       }
       const span = j - i;
       if (span >= 2) {
-        reshapeRamp(notes.slice(i, j + 1), dir);
+        reshapeRamp(notes.slice(i, j + 1), dir, humanAmount);
       }
       i = Math.max(j, i + 1);
     }
@@ -1343,7 +1344,7 @@ function enhanceDynamicRamps(tracks) {
  * @param {Array<{volume:number}>} run
  * @param {number} dir +1 crescendo, -1 diminuendo
  */
-function reshapeRamp(run, dir) {
+function reshapeRamp(run, dir, humanAmount = 0) {
   const first = run[0].volume;
   const last = run[run.length - 1].volume;
   let lo = Math.min(first, last);
@@ -1363,7 +1364,11 @@ function reshapeRamp(run, dir) {
     const eased = t * t * (3 - 2 * t);
     const shaped = dir > 0 ? eased : 1 - eased;
     // Mix curve toward destination more aggressively than linear
-    const v = lo + (hi - lo) * Math.pow(shaped, dir > 0 ? 0.85 : 1.1);
+    const curve = lo + (hi - lo) * Math.pow(shaped, dir > 0 ? 0.85 : 1.1);
+    const edge = Math.min(t, 1 - t);
+    const noise = stableSignedNoise(`dynamic-ramp:${dir}:${run.length}:${k}`);
+    const imperfect = noise * Math.min(7, (hi - lo) * 0.12) * humanAmount * Math.min(1, edge * 4);
+    const v = curve + imperfect;
     run[k].volume = Math.max(12, Math.min(127, Math.round(v)));
   }
 }
