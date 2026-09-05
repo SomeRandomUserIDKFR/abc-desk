@@ -1042,7 +1042,10 @@ function applyHumanization(tracks, humanize) {
         }
         if (bowedString) {
           // Alternating bow pressure adds a small attack/release irregularity.
-          volumeFactor *= 1 + (bowDirection * 0.035 + bowPressureNoise * 0.045) * amount;
+          volumeFactor *= 1 + (bowDirection * 0.045 + bowPressureNoise * 0.06) * amount;
+          if (mistakeNoise < amount * 0.06) {
+            volumeFactor *= 0.9 + stableUnitNoise(`${seedBase}:bow-slip`) * 0.12;
+          }
         }
         note.volume = Math.max(10, Math.min(118, Math.round(note.volume * volumeFactor)));
       }
@@ -1154,14 +1157,16 @@ function isViolinInstrument(instrument) {
 
 function isBowedStringInstrument(instrument) {
   const name = normalizeInstrumentName(instrument);
+  if (name.includes("pizzicato")) return false;
   return (
     name === "violin" ||
     name === "fiddle" ||
     name === "viola" ||
     name === "cello" ||
     name === "contrabass" ||
-    name === "string-ensemble-1" ||
-    name === "string-ensemble-2"
+    /^string-ensemble(?:-1|-2)?$/.test(name) ||
+    /^synth-strings(?:-1|-2)?$/.test(name) ||
+    name === "strings"
   );
 }
 
