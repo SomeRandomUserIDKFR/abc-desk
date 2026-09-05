@@ -130,7 +130,7 @@ export const INSTRUMENTS = {
   "double-bass": { program: 43, label: "Double Bass" },
   harp: { program: 46, label: "Orchestral Harp" },
   timpani: { program: 47, label: "Timpani" },
-  string: { program: 48, label: "Adaptive Strings", adaptive: true },
+  string: { program: 40, label: "Adaptive Strings", adaptive: true },
   strings: { program: 48, label: "String Ensemble" },
   trumpet: { program: 56, label: "Trumpet" },
   trump: { program: 56, label: "Trumpet" },
@@ -922,9 +922,6 @@ export function balanceHeldNotes(tracks, ctx = {}) {
 
   for (const track of tracks) {
     for (const note of track) {
-      if (adaptiveStrings && note.pitch != null) {
-        note.instrument = adaptiveStringInstrument(note.pitch);
-      }
       clampPitchForSoundfont(note);
     }
   }
@@ -1574,14 +1571,6 @@ function isWoodwindInstrument(instrument) {
 function isViolinInstrument(instrument) {
   const name = normalizeInstrumentName(instrument);
   return name === "violin" || name === "fiddle";
-}
-
-function adaptiveStringInstrument(pitch) {
-  const midi = Number(pitch);
-  if (midi >= 76) return "violin";
-  if (midi >= 62) return "viola";
-  if (midi >= 48) return "cello";
-  return "contrabass";
 }
 
 function isBowedStringInstrument(instrument) {

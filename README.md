@@ -102,11 +102,12 @@ The **Articulation lab** sample compares `!staccato!`, `!tenuto!`,
 normalized counts appear in the player diagnostics.
 
 String instruments include `violin`, `viola`, `cello`, `contrabass` (also
-`double bass`), and adaptive `string`. Adaptive strings select violin above
-MIDI 76, viola from 62, cello from 48, and contrabass below 48. All four use
-the same intonation/humanization pipeline, while their soundfont identity,
-register emphasis, attack, and resonance differ. The **Four strings showcase**
-sample demonstrates the adaptive mode across a wide range.
+`double bass`), and `string`. `string` uses the native violin soundfont as its
+shared bowed-string base, preserving the original violin character while
+register-aware shaping adds darker low notes and broader middle/upper response.
+All four named instruments use the same intonation/humanization pipeline, while
+their soundfont identities remain distinct. The **Four strings showcase**
+sample demonstrates the shared base across a wide range.
 
 Double bass uses abcjs's native `contrabass` soundfont (program 43), preserving
 a bowed orchestral-bass character. It does not use the plucked `acoustic_bass`
