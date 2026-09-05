@@ -11,7 +11,7 @@ import {
 import { parseParts } from "./deskParts.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
-import { createDeskPlayer } from "./deskPlayer.js";
+import { createDeskPlayer, createTestingPlayer } from "./deskPlayer.js";
 import songTxt from "../Song.txt?raw";
 
 const SAMPLES = {
@@ -114,6 +114,7 @@ C,2 E,2 G,2 C2 | G,2 E,2 C,4 | D,2 F,2 A,2 D2 | A,2 F,2 D,4 |`,
 
 const shared = readShareFromLocation();
 const DEFAULT_ABC = shared || SAMPLES.cooleys;
+const testingFramework = window.location.hash.toLowerCase() === "#testingframework";
 
 const app = document.querySelector("#app");
 
@@ -167,6 +168,14 @@ app.innerHTML = `
       <div class="audio-row">
         <div id="audio"></div>
       </div>
+      ${
+        testingFramework
+          ? `<div id="testing-panel" class="lint-panel" aria-label="Player experiment">
+              <div class="lint-header"><h2 class="panel-title">Player experiment</h2><span class="lint-count">#testingframework</span></div>
+              <p id="testing-metrics" class="lint-empty">Render a tune to inspect normalized playback events.</p>
+            </div>`
+          : ""
+      }
       <div class="score-wrap">
         <div id="paper"></div>
       </div>
@@ -208,6 +217,7 @@ const downloadWavBtn = document.querySelector("#download-wav");
 const downloadPdfBtn = document.querySelector("#download-pdf");
 const downloadPngBtn = document.querySelector("#download-png");
 const downloadJpegBtn = document.querySelector("#download-jpeg");
+const testingMetrics = document.querySelector("#testing-metrics");
 const supportsAudio = abcjs.synth.supportsAudio();
 
 editor.value = DEFAULT_ABC;
@@ -394,7 +404,7 @@ async function saveScoreAsPdf() {
 function updateDownloadButtons() {
   const hasTune = Boolean(lastVisualObj);
   downloadMidiBtn.disabled = !hasTune;
-  downloadWavBtn.disabled = !hasTune || !supportsAudio;
+  downloadWavBtn.disabled = !hasTune || !supportsAudio || !player?.canCreateWav;
   downloadPdfBtn.disabled = !hasTune;
   downloadPngBtn.disabled = !hasTune;
   downloadJpegBtn.disabled = !hasTune;
@@ -507,11 +517,16 @@ function renderLint(issues) {
 }
 
 function initSynth() {
-  player = createDeskPlayer({
-    abcjs,
-    audioSelector: "#audio",
-    cursorControl: new CursorControl(),
-  });
+  player = testingFramework
+    ? createTestingPlayer({
+        audioSelector: "#audio",
+        cursorControl: new CursorControl(),
+      })
+    : createDeskPlayer({
+        abcjs,
+        audioSelector: "#audio",
+        cursorControl: new CursorControl(),
+      });
   if (!player.supportsAudio) {
     audioEl.innerHTML =
       '<p style="margin:0;color:var(--muted);font-size:0.85rem">Audio playback is not supported in this browser.</p>';
@@ -622,6 +637,7 @@ function renderScore() {
     if (player?.loaded && lastVisualObj) {
       const audioParams = deskAudioParams(prepared.meta);
       player.setTune(lastVisualObj, audioParams);
+      updateTestingMetrics();
     }
     updateDownloadButtons();
   } catch (err) {
@@ -642,6 +658,14 @@ function renderScore() {
 
 }
 
+function updateTestingMetrics() {
+  if (!testingMetrics) return;
+  const metrics = player?.getDiagnostics();
+  testingMetrics.textContent = metrics
+    ? `${player.backendName}: ${metrics.tracks} tracks · ${metrics.notes} notes · ${metrics.events} events · ${metrics.duration}s`
+    : "Load playback to inspect normalized playback events.";
+}
+
 audioEl.addEventListener("click", (event) => {
   if (!(event.target instanceof Element) || !event.target.closest("#enable-audio")) {
     return;
@@ -650,6 +674,7 @@ audioEl.addEventListener("click", (event) => {
   if (player?.loaded && lastVisualObj && lastPrepared) {
     const audioParams = deskAudioParams(lastPrepared.meta);
     player.setTune(lastVisualObj, audioParams);
+    updateTestingMetrics();
   }
 });
 

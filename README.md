@@ -17,6 +17,18 @@ npm run export-html
 
 The generated file is `abc-desk.standalone.html`. It bundles the app CSS and JS inline, so it does not require a sibling `assets/` folder or a local web server.
 
+## Player experiment
+
+Open the app with `#testingframework` to opt into the experimental timer backend:
+
+```text
+http://localhost:5173/#testingframework
+```
+
+This route intentionally does not load soundfonts. It schedules normalized abcjs note
+events through a small test clock, exposes event counts and duration, and keeps the
+normal abcjs player untouched on every other URL. WAV export is disabled in this mode.
+
 ## Live site
 
 https://somerandomuseridkfr.github.io/abc-desk/

@@ -7,9 +7,12 @@
 export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
   const supportsAudio = abcjs.synth.supportsAudio();
   let controller = null;
+  let diagnostics = null;
 
   return {
     supportsAudio,
+    backendName: "abcjs-adapter",
+    canCreateWav: true,
 
     load() {
       if (!supportsAudio || controller) return;
@@ -29,11 +32,16 @@ export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
 
     setTune(visualObj, audioParams) {
       if (!controller) return;
+      diagnostics = inspectTune(visualObj, audioParams);
       controller.setTune(visualObj, false, audioParams);
       this.invalidate();
       controller.visualObj = visualObj;
       controller.options = audioParams;
       controller.disable(false);
+    },
+
+    getDiagnostics() {
+      return diagnostics;
     },
 
     disable(value) {
@@ -47,6 +55,7 @@ export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
       } catch {
         /* cleanup is best effort */
       }
+
       if (controller.timer) {
         try {
           controller.timer.reset();
@@ -80,5 +89,147 @@ export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
         throw error;
       }
     },
+  };
+}
+
+export function createTestingPlayer({ audioSelector, cursorControl }) {
+  let loaded = false;
+  let visualObj = null;
+  let timers = [];
+  let events = [];
+  let diagnostics = null;
+  let paused = false;
+
+  return {
+    supportsAudio: true,
+    canCreateWav: false,
+    backendName: "testing-timer-backend",
+
+    load() {
+      if (loaded) return;
+      loaded = true;
+      const audio = document.querySelector(audioSelector);
+      if (!audio) throw new Error(`Testing backend target not found: ${audioSelector}`);
+      audio.innerHTML = `
+        <button type="button" class="primary" data-test-play>Play test clock</button>
+        <button type="button" data-test-pause>Pause</button>
+        <button type="button" data-test-reset>Reset</button>
+      `;
+      audio.querySelector("[data-test-play]").addEventListener("click", play);
+      audio.querySelector("[data-test-pause]").addEventListener("click", pause);
+      audio.querySelector("[data-test-reset]").addEventListener("click", reset);
+    },
+
+    get loaded() {
+      return loaded;
+    },
+
+    setTune(nextVisualObj, audioParams) {
+      invalidate();
+      visualObj = nextVisualObj;
+      const sequence = visualObj.setUpAudio(audioParams);
+      events = (sequence?.tracks ?? []).flat().filter((event) => event.cmd === "note");
+      diagnostics = summarizeEvents(sequence?.tracks ?? []);
+      paused = false;
+    },
+
+    getDiagnostics() {
+      return diagnostics;
+    },
+
+    disable(value) {
+      const audio = document.querySelector(audioSelector);
+      audio?.querySelectorAll("button").forEach((button) => {
+        button.disabled = Boolean(value);
+      });
+    },
+
+    invalidate,
+
+    async createWav() {
+      throw new Error("WAV export is unavailable in the testing backend.");
+    },
+  };
+
+  function play() {
+    if (!visualObj || paused) return;
+    cursorControl.onStart();
+    for (const event of events) {
+      const delay = Math.max(0, Math.round((Number(event.start) || 0) * 1000));
+      timers.push(window.setTimeout(() => cursorControl.onEvent({
+        elements: event.elements || event.elts || [],
+        left: 0,
+        top: 0,
+        height: 0,
+      }), delay));
+    }
+    const end = Math.max(...events.map((event) => Number(event.end) || 0), 0);
+    timers.push(window.setTimeout(() => {
+      cursorControl.onFinished();
+      paused = true;
+    }, Math.round(end * 1000) + 20));
+  }
+
+  function pause() {
+    paused = true;
+    clearTimers();
+  }
+
+  function reset() {
+    pause();
+    cursorControl.onFinished();
+    paused = false;
+  }
+
+  function invalidate() {
+    clearTimers();
+    cursorControl.onFinished();
+    paused = false;
+  }
+
+  function clearTimers() {
+    for (const timer of timers) window.clearTimeout(timer);
+    timers = [];
+  }
+}
+
+function inspectTune(visualObj, audioParams) {
+  const sequence = visualObj.setUpAudio(audioParams);
+  const tracks = sequence?.tracks ?? [];
+  let notes = 0;
+  let events = 0;
+  let end = 0;
+  for (const track of tracks) {
+    for (const event of track) {
+      events++;
+      if (event.cmd === "note") {
+        notes++;
+        end = Math.max(end, Number(event.end) || 0);
+      }
+    }
+  }
+  return summarizeEvents(tracks, { notes, events, end });
+}
+
+function summarizeEvents(tracks, counts = {}) {
+  let notes = counts.notes ?? 0;
+  let events = counts.events ?? 0;
+  let end = counts.end ?? 0;
+  if (counts.notes == null) {
+    for (const track of tracks) {
+      for (const event of track) {
+        events++;
+        if (event.cmd === "note") {
+          notes++;
+          end = Math.max(end, Number(event.end) || 0);
+        }
+      }
+    }
+  }
+  return {
+    tracks: tracks.length,
+    notes,
+    events,
+    duration: Math.round(end * 1000) / 1000,
   };
 }
