@@ -103,7 +103,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
 
   return {
     supportsAudio: true,
-    canCreateWav: false,
+    canCreateWav: true,
     backendName: "testing-timer-backend",
 
     load() {
@@ -160,8 +160,20 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
 
     invalidate,
 
-    async createWav() {
-      throw new Error("WAV export is unavailable in the testing backend.");
+    async createWav(nextVisualObj, audioParams) {
+      const wavSynth = new abcjs.synth.CreateSynth();
+      const options = amplifyExperimentalHuman(audioParams);
+      try {
+        await wavSynth.init({ visualObj: nextVisualObj, options });
+        await wavSynth.prime();
+        return {
+          url: wavSynth.download(),
+          stop: () => wavSynth.stop?.(),
+        };
+      } catch (error) {
+        wavSynth.stop?.();
+        throw error;
+      }
     },
   };
 
