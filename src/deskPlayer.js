@@ -258,7 +258,9 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
 
     function groupSimultaneousEvents(noteEvents) {
       const grouped = [];
-      const tolerance = 0.0125;
+      // Human/player timing can separate one written beat by a few hundredths
+      // of a whole note; keep those voices in one visual callback.
+      const tolerance = 0.04;
       for (const event of [...noteEvents].sort((a, b) => a.start - b.start)) {
         const previous = grouped[grouped.length - 1];
         if (
