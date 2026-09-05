@@ -101,7 +101,22 @@ z4 (D2G2 | A2B2 c4 | z4 [Tone:sorrow] (D2F2 |
 G2A2 B4 | d2c2 B2A2 | G4 z4 |
 (G2A2 B2c2 | d8 |`,
 
-  ensemble: `Part: flute
+articulation: `X:1
+T:ABC Desk Articulation Lab
+Inst: violin
+Tone: warm
+Human: 0.24
+Room: chamber
+Players: 2
+M:4/4
+L:1/8
+Q:1/4=96
+K:Dm
+!staccato!D !staccato!F !staccato!A !staccato!d |
+!tenuto!d2 !marcato!c2 !tremolo!A4 |
+(D2F2 A2d2) | !marcato!c2 !staccato!A2 D4 |`,
+
+ensemble: `Part: flute
 Inst: flute
 Trans: 0
 X:1
@@ -179,6 +194,7 @@ app.innerHTML = `
             <option value="blues">Blues</option>
             <option value="expression">Expression pack</option>
             <option value="expansion">Expansion pack</option>
+            <option value="articulation">Articulation lab</option>
             <option value="ensemble">Ensemble (Part:)</option>
             <option value="ensembleStress">Ensemble stress test</option>
             <option value="broken">Broken Reflection</option>
@@ -747,9 +763,16 @@ function updateTestingMetrics() {
   if (!testingMetrics) return;
   const metrics = player?.getDiagnostics();
   testingMetrics.textContent = metrics
-    ? `${player.backendName}: ${metrics.tracks} tracks · ${metrics.notes} notes · ${metrics.events} events · ${metrics.duration}s · ${metrics.phrases} phrases · ${metrics.expressionEvents} curves · ${metrics.toneEvents} tone changes · ${metrics.players} players`
+    ? `${player.backendName}: ${metrics.tracks} tracks · ${metrics.notes} notes · ${metrics.events} events · ${metrics.duration}s · ${metrics.phrases} phrases · ${metrics.expressionEvents} curves · ${metrics.toneEvents} tone changes · ${metrics.players} players · ${formatArticulations(metrics.articulations)}`
     : "Load playback to inspect normalized playback events.";
   renderPerformanceTimeline(metrics);
+}
+
+function formatArticulations(articulations = {}) {
+  return Object.entries(articulations)
+    .filter(([, count]) => count > 0)
+    .map(([name, count]) => `${name} ${count}`)
+    .join(", ") || "no articulations";
 }
 
 function updateTimelinePlayhead(seconds) {

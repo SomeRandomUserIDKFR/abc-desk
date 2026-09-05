@@ -97,6 +97,10 @@ graph: rustic-to-warm-to-emotional tone changes, a sorrowful counterline,
 slurs, hairpin dynamics, rests, concert acoustics, and four independent
 players.
 
+The **Articulation lab** sample compares `!staccato!`, `!tenuto!`,
+`!marcato!`, and `!tremolo!` markers in the experimental player. Their
+normalized counts appear in the player diagnostics.
+
 The experimental route also shows a live **Performance map** beneath the
 playback controls. Phrase spans, expression curves, and phrase-breath tempo
 shaping are shown as separate layers, with the playhead following the audible

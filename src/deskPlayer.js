@@ -623,6 +623,7 @@ function summarizeEvents(tracks, counts = {}, graph = null) {
     expressionEvents: graph?.expression.length ?? 0,
     toneEvents: graph?.tone.length ?? 0,
     tempoEvents: graph?.tempo.length ?? 0,
+    articulations: graph?.articulations ?? {},
     roomEvents: graph?.room.length ?? 0,
     players: graph?.player.count ?? 1,
     performance: graph
@@ -631,6 +632,7 @@ function summarizeEvents(tracks, counts = {}, graph = null) {
           expression: graph.expression,
           tone: graph.tone,
           tempo: graph.tempo,
+          articulations: graph.articulations,
         }
       : null,
   };

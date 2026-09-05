@@ -28,7 +28,7 @@ export function normalizePerformanceTracks(tracks) {
         endChar: finiteNumber(event.endChar),
         gap: finiteNumber(event.gap),
         endType: event.endType,
-        articulation: event.articulation ?? (event.endType === "tenuto" ? "legato" : "detache"),
+        articulation: normalizeArticulation(event.articulation ?? event.endType),
         envelope: {
           attack: event.endType === "tenuto" ? 0.02 : 0.008,
           release: event.endType === "tenuto" ? 0.08 : 0.035,
@@ -44,6 +44,11 @@ export function normalizePerformanceTracks(tracks) {
 
 export function buildPerformanceGraph(tracks, context = {}) {
   const notes = tracks.flat();
+  const articulations = notes.reduce((counts, note) => {
+    const key = note.articulation ?? "unknown";
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
   const phrases = [];
   const expression = [];
   for (const track of tracks) {
@@ -97,6 +102,7 @@ export function buildPerformanceGraph(tracks, context = {}) {
     tone,
     room,
     tempo,
+    articulations,
     player: {
       count: Math.max(1, Number(context.players) || 1),
       metadata: tracks.map((_, trackIndex) => ({
@@ -105,6 +111,15 @@ export function buildPerformanceGraph(tracks, context = {}) {
       })),
     },
   };
+}
+
+function normalizeArticulation(value) {
+  const name = String(value ?? "").toLowerCase();
+  if (name.includes("staccato")) return "staccato";
+  if (name.includes("tremolo")) return "tremolo";
+  if (name.includes("marcato")) return "marcato";
+  if (name === "tenuto" || name === "legato") return "legato";
+  return name || "detache";
 }
 
 function createPhrase(notes) {

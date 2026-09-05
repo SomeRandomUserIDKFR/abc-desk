@@ -64,6 +64,22 @@ export const DESK_DECORATIONS = {
     label: "rhythm",
     expandTo: "!style=rhythm!",
   },
+  staccato: {
+    label: "staccato",
+    expandTo: "!staccato!",
+  },
+  tenuto: {
+    label: "tenuto",
+    expandTo: "!tenuto!",
+  },
+  marcato: {
+    label: "marcato",
+    expandTo: "!marcato!",
+  },
+  tremolo: {
+    label: "tremolo",
+    expandTo: "!tremolo!",
+  },
 };
 
 /** Aliases normalized before decoration expand (open/close dynamics). */
