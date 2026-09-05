@@ -1158,6 +1158,13 @@ export function balanceHeldNotes(tracks, ctx = {}) {
           note.cents =
             (Number(note.cents) || 0) +
             Math.round((vibratoPhase - 0.5) * vibratoDepth * sustainFactor * 10) / 10;
+          if (isBowedStringInstrument(note.instrument) && Number(note.pitch) >= 79) {
+            const registerFactor = Math.min(1, (Number(note.pitch) - 79) / 24);
+            const drift = stableSignedNoise(
+              `upper-register-drift:${trackIndex}:${phraseProfile.seed}:${index}:${note.pitch}`,
+            );
+            note.cents += drift * (0.18 + registerFactor * 0.42) * sustainFactor * humanAmount;
+          }
           if (playerCount > 1) {
             note.cents += Math.round(playerNoise * Math.min(2.5, playerCount * 0.12) * 10) / 10;
           }
