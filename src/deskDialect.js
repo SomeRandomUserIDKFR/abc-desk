@@ -1647,6 +1647,16 @@ function instrumentFamily(instrument) {
   return "other";
 }
 
+const BOWED_STRING_BASE_PROFILE = {
+  base: 1.0,
+  shortBoost: 1.2,
+  holdBase: 0.96,
+  holdDepth: 0.08,
+  highCut: 90,
+  stackFactor: 0.9,
+  unisonFactor: 0.88,
+};
+
 function familyMixProfile(family) {
   switch (family) {
     case "woodwind":
@@ -1660,15 +1670,7 @@ function familyMixProfile(family) {
         unisonFactor: 0.7,
       };
     case "strings":
-      return {
-        base: 1.0,
-        shortBoost: 1.2,
-        holdBase: 0.96,
-        holdDepth: 0.08,
-        highCut: 90,
-        stackFactor: 0.9,
-        unisonFactor: 0.88,
-      };
+      return BOWED_STRING_BASE_PROFILE;
     case "brass":
       return {
         base: 0.94,

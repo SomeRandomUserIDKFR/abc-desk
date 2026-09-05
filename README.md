@@ -112,6 +112,11 @@ Double bass uses abcjs's native `contrabass` soundfont (program 43), preserving
 a bowed orchestral-bass character. It does not use the plucked `acoustic_bass`
 bank (program 32).
 
+The four bowed-string instruments share one ABC Desk base mix profile and the
+same selected `Tone:` response. Their individual soundfonts remain distinct,
+so violin, viola, cello, and double bass retain their natural register colors
+without becoming differently normalized instruments.
+
 Ensembles now receive perceptual loudness compensation: layered sections scale
 approximately by the inverse square root of player count, preserving width and
 variation without making `Players: 8` overwhelm the solo balance.
