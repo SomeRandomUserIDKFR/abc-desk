@@ -99,6 +99,8 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
   let events = [];
   let diagnostics = null;
   let paused = false;
+  let audioContext = null;
+  let activeSources = [];
 
   return {
     supportsAudio: true,
@@ -153,15 +155,21 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
 
   function play() {
     if (!visualObj || paused) return;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error("Web Audio is unavailable in the testing backend.");
+    audioContext ??= new AudioContextClass();
+    audioContext.resume();
     cursorControl.onStart();
     for (const event of events) {
       const delay = Math.max(0, Math.round((Number(event.start) || 0) * 1000));
+      const duration = Math.max(0.04, (Number(event.end) || 0) - (Number(event.start) || 0));
       timers.push(window.setTimeout(() => cursorControl.onEvent({
         elements: event.elements || event.elts || [],
         left: 0,
         top: 0,
         height: 0,
       }), delay));
+      timers.push(window.setTimeout(() => playNote(event, duration), delay));
     }
     const end = Math.max(...events.map((event) => Number(event.end) || 0), 0);
     timers.push(window.setTimeout(() => {
@@ -173,6 +181,7 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
   function pause() {
     paused = true;
     clearTimers();
+    stopSources();
   }
 
   function reset() {
@@ -183,6 +192,7 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
 
   function invalidate() {
     clearTimers();
+    stopSources();
     cursorControl.onFinished();
     paused = false;
   }
@@ -190,6 +200,40 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
   function clearTimers() {
     for (const timer of timers) window.clearTimeout(timer);
     timers = [];
+  }
+
+  function playNote(event, duration) {
+    if (!audioContext || paused || event.pitch == null) return;
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const now = audioContext.currentTime;
+    const frequency = 440 * Math.pow(2, (Number(event.pitch) - 69) / 12);
+    oscillator.type = "triangle";
+    oscillator.frequency.value = frequency;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(
+      Math.min(0.18, Math.max(0.02, (Number(event.volume) || 64) / 700)),
+      now + 0.012,
+    );
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    oscillator.connect(gain).connect(audioContext.destination);
+    oscillator.start(now);
+    oscillator.stop(now + duration + 0.02);
+    activeSources.push(oscillator);
+    oscillator.addEventListener("ended", () => {
+      activeSources = activeSources.filter((source) => source !== oscillator);
+    }, { once: true });
+  }
+
+  function stopSources() {
+    for (const source of activeSources) {
+      try {
+        source.stop();
+      } catch {
+        /* source may already have ended */
+      }
+    }
+    activeSources = [];
   }
 }
 
