@@ -188,6 +188,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
       );
       timers.push(window.setTimeout(() => cursorControl.onEvent({
         elements: event.elements || event.elts || [],
+        highlightDuration: eventDuration(event) * secondsPerWholeNote * 1000,
         left: 0,
         top: 0,
         height: 0,

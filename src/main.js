@@ -411,11 +411,14 @@ function updateDownloadButtons() {
 }
 
 class CursorControl {
-  constructor() {
+  constructor(experimental = false) {
     this.beatSubdivisions = 2;
+    this.experimental = experimental;
+    this.experimentalActive = new Map();
   }
 
   onStart() {
+    this.experimentalActive.clear();
     const svg = paper.querySelector("svg");
     if (!svg) return;
     let cursor = svg.querySelector(".abcjs-cursor");
@@ -432,12 +435,23 @@ class CursorControl {
 
   onEvent(event) {
     if (!event?.elements?.length) return;
-    paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
-      el.classList.remove("abcjs-highlight");
-    });
+    if (!this.experimental) {
+      paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
+        el.classList.remove("abcjs-highlight");
+      });
+    }
     for (const set of event.elements) {
       for (const el of set) {
         el.classList.add("abcjs-highlight");
+        if (this.experimental && event.highlightDuration) {
+          const token = {};
+          this.experimentalActive.set(el, token);
+          window.setTimeout(() => {
+            if (this.experimentalActive.get(el) !== token) return;
+            this.experimentalActive.delete(el);
+            el.classList.remove("abcjs-highlight");
+          }, event.highlightDuration);
+        }
       }
     }
     const cursor = paper.querySelector(".abcjs-cursor");
@@ -450,6 +464,7 @@ class CursorControl {
   }
 
   onFinished() {
+    this.experimentalActive.clear();
     paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
       el.classList.remove("abcjs-highlight");
     });
@@ -521,7 +536,7 @@ function initSynth() {
     ? createTestingPlayer({
         abcjs,
         audioSelector: "#audio",
-        cursorControl: new CursorControl(),
+        cursorControl: new CursorControl(true),
       })
     : createDeskPlayer({
         abcjs,
