@@ -92,6 +92,11 @@ detached attacks, rests, an accent, and a sustained ending. Use it on
 `#testingframework`, then compare `Players: 1`, `2`, `4`, and `8` plus WAV
 export.
 
+The **Expansion pack** sample is a guided showcase of the new performance
+graph: rustic-to-warm-to-emotional tone changes, a sorrowful counterline,
+slurs, hairpin dynamics, rests, concert acoustics, and four independent
+players.
+
 The experimental player now converts abcjs audio output into an ABC Desk-owned
 performance event model before scheduling and highlighting. This keeps abcjs
 as the parser/soundfont provider while allowing timing, expression, players,

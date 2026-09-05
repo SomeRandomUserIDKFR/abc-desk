@@ -80,6 +80,27 @@ K:C
 !descendo(! e'2 c'2 g2 e2 | c2 G2 E2 C2 !descendo)! !pp! |
 !gimplus! !cluster!c8 | z8 |`,
 
+  expansion: `X:1
+T:ABC Desk Expansion Pack
+Inst: violin
+Tone: rustic
+Human: 0.28
+Room: concert
+Players: 4
+Distance: 0.65
+M:4/4
+L:1/8
+Q:1/4=84
+K:Gm
+V:1 name="Violin I"
+!p! (GABc d2c2 | BAGF G4 | [Tone:warm] (ABcd e2d2 | cBAG A4 |
+!crescendo(! B2d2 g2a2 | b2a2 g2f2 !crescendo)! |
+[Tone:emotional] (edcB A2G2 | F4 z4 |
+V:2 name="Violin II"
+z4 (D2G2 | A2B2 c4 | z4 [Tone:sorrow] (D2F2 |
+G2A2 B4 | d2c2 B2A2 | G4 z4 |
+(G2A2 B2c2 | d8 |`,
+
   ensemble: `Part: flute
 Inst: flute
 Trans: 0
@@ -157,6 +178,7 @@ app.innerHTML = `
             <option value="bach">Bach</option>
             <option value="blues">Blues</option>
             <option value="expression">Expression pack</option>
+            <option value="expansion">Expansion pack</option>
             <option value="ensemble">Ensemble (Part:)</option>
             <option value="ensembleStress">Ensemble stress test</option>
             <option value="broken">Broken Reflection</option>
