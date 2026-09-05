@@ -1152,9 +1152,12 @@ export function balanceHeldNotes(tracks, ctx = {}) {
           );
           const vibratoDepth =
             Math.min(14, 3 + duration * 2.5) * phraseProfile.vibratoDepth * humanAmount;
+          // Keep attacks closer to pitch center; sustained notes receive the
+          // larger drift that stands in for a delayed vibrato onset.
+          const sustainFactor = Math.min(1, Math.max(0, (duration - 0.35) / 1.1));
           note.cents =
             (Number(note.cents) || 0) +
-            Math.round((vibratoPhase - 0.5) * vibratoDepth * 10) / 10;
+            Math.round((vibratoPhase - 0.5) * vibratoDepth * sustainFactor * 10) / 10;
           if (playerCount > 1) {
             note.cents += Math.round(playerNoise * Math.min(2.5, playerCount * 0.12) * 10) / 10;
           }

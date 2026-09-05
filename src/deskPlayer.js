@@ -210,6 +210,7 @@ export function createTestingPlayer({
       currentAudioParams?.callbackContext?.room,
       currentAudioParams?.callbackContext?.distance,
       currentAudioParams?.callbackContext?.players,
+      currentAudioParams?.pan,
     );
     cursorControl.onStart();
     pausedSeconds = 0;
@@ -284,7 +285,7 @@ export function createTestingPlayer({
 
   }
 
-  function connectRoom(nextSynth, room, distance = 0.5, players = 1) {
+  function connectRoom(nextSynth, room, distance = 0.5, players = 1, voicePans = []) {
     if (!nextSynth.directSource?.length) return;
     const context = nextSynth.directSource[0].context;
     const input = context.createGain();
@@ -355,9 +356,11 @@ export function createTestingPlayer({
       const variation = Math.min(0.08, (playerCount - 1) * 0.012);
       playerGain.gain.value = 1 + Math.sin((index + 1) * 2.17) * variation;
       const stagePosition =
-        nextSynth.directSource.length > 1
-          ? index / (nextSynth.directSource.length - 1) * 2 - 1
-          : 0;
+        Number.isFinite(Number(voicePans[index]))
+          ? Number(voicePans[index])
+          : nextSynth.directSource.length > 1
+            ? index / (nextSynth.directSource.length - 1) * 2 - 1
+            : 0;
       playerPan.pan.value = stagePosition * Math.max(0.35, spacing);
       source.connect(playerGain).connect(playerPan).connect(input);
     });
