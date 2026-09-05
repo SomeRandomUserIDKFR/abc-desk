@@ -5,9 +5,9 @@ import abcjs from "abcjs";
  * Compiles to meta + clean ABC for abcjs.
  */
 
-const FRIENDLY_RE = /^(Inst|Tone)\s*:\s*(.*)$/i;
+const FRIENDLY_RE = /^(Inst|Tone|Human|Imperfect)\s*:\s*(.*)$/i;
 const ENCODED_RE =
-  /^(?:%%|I:)\s*desk-(instrument|tone)\s+(.+)$/i;
+  /^(?:%%|I:)\s*desk-(instrument|tone|human|imperfect)\s+(.+)$/i;
 const UNKNOWN_DESK_RE = /^(?:%%|I:)\s*desk-([a-z0-9-]+)\b/i;
 const MIDI_PROGRAM_LINE_RE = /^%%\s*MIDI\s+program\b(.*)$/i;
 const DRUM_FRIENDLY_RE = /^(Drum1|Drum2)\s*:\s*(.*)$/i;
@@ -319,6 +319,11 @@ export const TONES = {
     options: { soundFontVolumeMultiplier: 0.62, swing: 0, fadeLength: 620 },
     toneMix: { attack: 0.75, sustain: 0.6, shortBoost: 0.7, holdBias: 0.58 },
   },
+  emotional: {
+    label: "Emotional",
+    options: { soundFontVolumeMultiplier: 0.92, swing: 0.08, fadeLength: 560 },
+    toneMix: { attack: 0.92, sustain: 0.78, shortBoost: 0.86, holdBias: 0.74 },
+  },
   aggressive: {
     label: "Aggressive",
     options: { soundFontVolumeMultiplier: 1.35, swing: 0, fadeLength: 180 },
@@ -376,6 +381,26 @@ export function resolveTone(raw) {
   const hit = TONES[normalized];
   if (!hit) return null;
   return { ...hit, name: normalized };
+}
+
+/**
+ * @param {string} raw
+ * @returns {{ label: string, name: string, amount: number } | null}
+ */
+export function resolveHumanization(raw) {
+  if (!raw) return null;
+  const key = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!key || key === "off" || key === "false" || key === "none") {
+    return { label: "Human 0", name: "human", amount: 0 };
+  }
+  if (key === "on" || key === "true" || key === "human" || key === "imperfect") {
+    return { label: "Human 0.45", name: "human", amount: 0.45 };
+  }
+  const numeric = key.match(/(?:human|imperfect)?\s*([01](?:\.\d+)?|\.\d+)/i);
+  if (!numeric) return null;
+  const amount = Math.max(0, Math.min(1, Number(numeric[1])));
+  if (!Number.isFinite(amount)) return null;
+  return { label: `Human ${amount.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}`, name: "human", amount };
 }
 
 /**
@@ -536,6 +561,7 @@ export function parseDeskHeaders(source) {
   const warnings = [];
   let instrumentRaw = null;
   let toneRaw = null;
+  let humanRaw = null;
   let drum1Raw = null;
   let drum2Raw = null;
   /** @type {number | null} */
@@ -553,7 +579,8 @@ export function parseDeskHeaders(source) {
       const kind = friendly[1].toLowerCase();
       const value = friendly[2].trim();
       if (kind === "inst") instrumentRaw = value;
-      else toneRaw = value;
+      else if (kind === "tone") toneRaw = value;
+      else humanRaw = value;
       continue;
     }
 
@@ -562,7 +589,8 @@ export function parseDeskHeaders(source) {
       const kind = encoded[1].toLowerCase();
       const value = encoded[2].trim();
       if (kind === "instrument") instrumentRaw = value;
-      else toneRaw = value;
+      else if (kind === "tone") toneRaw = value;
+      else humanRaw = value;
       continue;
     }
 
@@ -626,6 +654,7 @@ export function parseDeskHeaders(source) {
   let cleanAbc = kept.join("\n");
   const fromInst = resolveInstrument(instrumentRaw);
   const tone = resolveTone(toneRaw);
+  const humanize = resolveHumanization(humanRaw);
   const drum1 = drum1Raw ? (resolveDrumSound(drum1Raw) ?? DEFAULT_DRUM_1) : undefined;
   const drum2 = drum2Raw ? (resolveDrumSound(drum2Raw) ?? DEFAULT_DRUM_2) : undefined;
   const hasMultipleMidiPrograms =
@@ -635,7 +664,10 @@ export function parseDeskHeaders(source) {
     warnings.push(`Unknown Inst: “${instrumentRaw}” (try flute, violin, piano, or a GM number)`);
   }
   if (toneRaw && !tone) {
-    warnings.push(`Unknown Tone: “${toneRaw}” (try warm, bright, soft, rustic, upbeat, sorrow, aggressive, swing, neutral)`);
+    warnings.push(`Unknown Tone: “${toneRaw}” (try warm, bright, soft, rustic, upbeat, sorrow, emotional, aggressive, swing, neutral)`);
+  }
+  if (humanRaw && !humanize) {
+    warnings.push(`Unknown Human/Imperfect amount: “${humanRaw}” (try 0.35, 0.6, on, or off)`);
   }
   if (drum1Raw && !resolveDrumSound(drum1Raw)) {
     warnings.push(`Unknown Drum1: “${drum1Raw}” (try acoustic-snare, bass-drum-1, closed-hi-hat, or a MIDI drum number 35-81)`);
@@ -680,8 +712,10 @@ export function parseDeskHeaders(source) {
     meta: {
       instrument,
       tone,
+      humanize,
       instrumentRaw,
       toneRaw,
+      humanRaw,
       midiProgram: midiProgram ?? undefined,
       hasMultipleMidiPrograms,
       instrumentSource:
@@ -776,6 +810,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   if (!tracks?.length) return tracks;
 
   const toneMix = ctx?.tone?.toneMix ?? {};
+  const humanize = ctx?.humanize;
 
   // Note durations from abcjs are in whole notes; 2 quarter-note beats in 4/4
   // is 1/2 of a whole note.
@@ -949,9 +984,80 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     }
   }
 
+  applyHumanization(tracks, humanize);
   addPercussionMarkers(tracks, ctx);
 
   return tracks;
+}
+
+function applyHumanization(tracks, humanize) {
+  const amount = Math.max(0, Math.min(1, Number(humanize?.amount ?? 0)));
+  if (!amount) return;
+
+  for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
+    const track = tracks[trackIndex];
+    for (let noteIndex = 0; noteIndex < track.length; noteIndex++) {
+      const note = track[noteIndex];
+      if (note.pitch == null || note.start == null || note.end == null) continue;
+      const family = instrumentFamily(note.instrument);
+      if (family === "fx") continue;
+
+      const dur = Math.max(0.001, note.end - note.start);
+      const seedBase = `${trackIndex}:${noteIndex}:${Math.round(note.start * 512)}:${note.pitch}:${note.instrument || ""}`;
+      const timingNoise = stableSignedNoise(`${seedBase}:timing`);
+      const durationNoise = stableSignedNoise(`${seedBase}:duration`);
+      const volumeNoise = stableSignedNoise(`${seedBase}:volume`);
+      const centsNoise = stableSignedNoise(`${seedBase}:cents`);
+      const mistakeNoise = stableUnitNoise(`${seedBase}:mistake`);
+
+      const rubatoWidth =
+        family === "strings" ? 0.01 : family === "woodwind" ? 0.008 : family === "brass" ? 0.006 : 0.005;
+      const timeShift = timingNoise * rubatoWidth * amount;
+      const start = Math.max(0, note.start + timeShift);
+      const durFactor = 1 + durationNoise * familyDurationDrift(family, note.instrument) * amount;
+      const nextDur = Math.max(0.01, dur * durFactor);
+      note.start = start;
+      note.end = start + nextDur;
+
+      if (note.volume != null) {
+        const volumeRange =
+          family === "strings" ? 0.1 : family === "woodwind" ? 0.075 : family === "brass" ? 0.07 : 0.05;
+        let volumeFactor = 1 + volumeNoise * volumeRange * amount;
+        if (mistakeNoise < amount * 0.035 && family !== "keyboard") {
+          volumeFactor *= 0.88 + stableUnitNoise(`${seedBase}:tone-slip`) * 0.2;
+        }
+        note.volume = Math.max(10, Math.min(118, Math.round(note.volume * volumeFactor)));
+      }
+
+      const centsWidth = familyCentsWidth(family, note.instrument);
+      if (centsWidth) {
+        const existing = Number(note.cents) || 0;
+        let cents = existing + centsNoise * centsWidth * amount;
+        if (mistakeNoise < amount * 0.025) {
+          cents += stableSignedNoise(`${seedBase}:cents-slip`) * centsWidth * 0.6 * amount;
+        }
+        note.cents = Math.round(cents * 10) / 10;
+      }
+    }
+  }
+}
+
+function familyDurationDrift(family, instrument) {
+  if (isViolinInstrument(instrument)) return 0.07;
+  if (family === "strings") return 0.055;
+  if (family === "woodwind") return 0.04;
+  if (family === "brass") return 0.035;
+  if (family === "keyboard") return 0.02;
+  return 0.025;
+}
+
+function familyCentsWidth(family, instrument) {
+  if (isViolinInstrument(instrument)) return 12;
+  if (family === "strings") return 9;
+  if (family === "woodwind") return 6;
+  if (family === "brass") return 5;
+  if (family === "bass") return 7;
+  return 0;
 }
 
 function addPercussionMarkers(tracks, ctx) {
@@ -1042,6 +1148,20 @@ function clampPitchForSoundfont(note) {
   const family = instrumentFamily(note.instrument);
   if (family !== "keyboard") return;
   note.pitch = Math.max(KEYBOARD_PITCH_RANGE.min, Math.min(KEYBOARD_PITCH_RANGE.max, Math.round(pitch)));
+}
+
+function stableUnitNoise(seed) {
+  let hash = 2166136261;
+  const text = String(seed);
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967295;
+}
+
+function stableSignedNoise(seed) {
+  return stableUnitNoise(seed) * 2 - 1;
 }
 
 function instrumentFamily(instrument) {
@@ -1234,6 +1354,7 @@ export function deskAudioParams(meta) {
       drum1: meta.drum1,
       drum2: meta.drum2,
       tone: meta.tone,
+      humanize: meta.humanize,
     },
     pan,
     sequenceCallback: (tracks, ctx) =>
@@ -1243,6 +1364,7 @@ export function deskAudioParams(meta) {
         drum1: ctx?.drum1 ?? meta.drum1,
         drum2: ctx?.drum2 ?? meta.drum2,
         tone: ctx?.tone ?? meta.tone,
+        humanize: ctx?.humanize ?? meta.humanize,
       }),
   };
 
@@ -1269,7 +1391,7 @@ export function deskAudioParams(meta) {
 
 /**
  * Short status fragment for Inst/Tone / %%MIDI program / Desk decorations.
- * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, instrumentSource?: string | null, decorationsUsed?: string[] }} meta
+ * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, humanize?: ReturnType<typeof resolveHumanization>, instrumentSource?: string | null, decorationsUsed?: string[] }} meta
  */
 export function deskStatusFragment(meta) {
   const parts = [];
@@ -1284,6 +1406,9 @@ export function deskStatusFragment(meta) {
   }
   if (meta.tone) {
     parts.push(`Tone ${meta.tone.label}`);
+  }
+  if (meta.humanize?.amount) {
+    parts.push(meta.humanize.label);
   }
   if (meta.drum1 || meta.drum2) {
     const drums = [meta.drum1?.label, meta.drum2?.label].filter(Boolean);

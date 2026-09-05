@@ -30,16 +30,19 @@ Friendly and encoded forms are equivalent (last wins):
 ```
 Inst: flute
 Tone: warm
+Human: 0.45
 ```
 
 ```
 %%desk-instrument flute
 %%desk-tone warm
+%%desk-human 0.45
 ```
 
 ```
 I:desk-instrument flute
 I:desk-tone warm
+I:desk-imperfect 0.45
 ```
 
 **Instrument** can also be the standard abcmidi form (same meaning as `Inst:`):
@@ -54,7 +57,8 @@ Put `%%MIDI program` **before** `K:` (in the header). After `K:` / mid-body it c
 `Inst: flute` compiles to `%%MIDI program 73`. If both are present, `%%MIDI program` wins.
 
 - **Inst: / %%MIDI program** — GM instrument for playback (`flute`, `violin`, `atmosphere`, or `0`–`127`)
-- **Tone:** playback character — `neutral`, `warm`, `bright`, `soft`, `rustic`, `upbeat`, `sorrow`, `aggressive`, `swing`
+- **Tone:** playback character — `neutral`, `warm`, `bright`, `soft`, `rustic`, `upbeat`, `sorrow`, `emotional`, `aggressive`, `swing`
+- **Human: / Imperfect:** optional stacking humanization amount from `0` to `1` (`Human: 0.35`, `Imperfect: 0.7`, `%%desk-human 0.45`). Adds small repeatable rubato, sound/volume variation, violin bowing imperfections, and slight cents drift for tunable instruments such as strings, woodwinds, brass, and bass.
 - **Drum1: / Drum2:** drum sounds for `o` / `p` note-attached hits (also `!o!` / `!p!`; `acoustic-snare`, `bass-drum-1`, `closed-hi-hat`, or `35`–`81`)
 
 ### Note / expression marks
