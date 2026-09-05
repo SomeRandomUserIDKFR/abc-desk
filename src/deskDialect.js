@@ -1040,7 +1040,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
 
   applyHumanization(tracks, humanize);
   if (ctx?.experimentalPerformance) {
-    shapeExperimentalPerformance(tracks, humanAmount);
+    shapeExperimentalPerformance(tracks, humanAmount, ctx?.players);
   }
   for (const track of tracks) {
     track.sort((a, b) => {
@@ -1051,8 +1051,10 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     });
   }
 
-  function shapeExperimentalPerformance(tracks, humanAmount) {
-    for (const track of tracks) {
+  function shapeExperimentalPerformance(tracks, humanAmount, players = 1) {
+    const playerCount = Math.max(1, Math.min(32, Number(players) || 1));
+    for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
+      const track = tracks[trackIndex];
       const notes = track.filter(
         (event) =>
           event.cmd === "note" &&
@@ -1069,10 +1071,21 @@ export function balanceHeldNotes(tracks, ctx = {}) {
         const gap = next ? Math.max(0, next.start - note.end) : 0;
         const phrasePosition = (index % 8) / 7;
         const arc = Math.sin(phrasePosition * Math.PI);
+        const playerNoise = stableSignedNoise(
+          `player:${playerCount}:${trackIndex}:${index}:${note.start}:${note.pitch}`,
+        );
+        const playerTiming = playerCount > 1 ? playerNoise * 0.004 * humanAmount : 0;
+        note.start = Math.max(0, note.start + playerTiming);
+        note.end = Math.max(note.start + 0.01, note.end + playerTiming);
 
         if (note.volume != null) {
           const phraseFactor = 0.91 + arc * 0.13 * humanAmount;
-          note.volume = Math.max(10, Math.min(118, Math.round(note.volume * phraseFactor)));
+          const playerFactor =
+            1 + playerNoise * Math.min(0.06, (playerCount - 1) * 0.006) * humanAmount;
+          note.volume = Math.max(
+            10,
+            Math.min(118, Math.round(note.volume * phraseFactor * playerFactor)),
+          );
         }
 
         if (gap > 0.025 && duration < 2) {
@@ -1085,6 +1098,9 @@ export function balanceHeldNotes(tracks, ctx = {}) {
           note.cents =
             (Number(note.cents) || 0) +
             Math.round((vibratoPhase - 0.5) * vibratoDepth * 10) / 10;
+          if (playerCount > 1) {
+            note.cents += Math.round(playerNoise * Math.min(2.5, playerCount * 0.12) * 10) / 10;
+          }
         }
       }
     }
@@ -1523,6 +1539,7 @@ export function deskAudioParams(meta) {
         drum2: ctx?.drum2 ?? meta.drum2,
         tone: ctx?.tone ?? meta.tone,
         humanize: ctx?.humanize ?? meta.humanize,
+        players: ctx?.players ?? meta.players,
         experimentalPerformance: ctx?.experimentalPerformance ?? false,
       }),
   };
