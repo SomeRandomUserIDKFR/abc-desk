@@ -141,6 +141,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
         }
       }
       events = tracks.flat().filter((event) => event.cmd === "note");
+      attachVisualElements(events, visualObj);
       diagnostics = summarizeEvents(sequence?.tracks ?? []);
       paused = false;
     },
@@ -227,6 +228,26 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
 
   function eventEnd(event) {
     return (Number(event.start) || 0) + eventDuration(event);
+  }
+
+  function attachVisualElements(noteEvents, tune) {
+    const selectables = tune.getSelectableArray?.() ?? [];
+    for (const event of noteEvents) {
+      if (event.startChar == null || event.endChar == null) continue;
+      const svgElements = selectables
+        .filter((selectable) => {
+          const abc = selectable.absEl?.abcelem;
+          return (
+            abc &&
+            abc.startChar < event.endChar &&
+            abc.endChar > event.startChar &&
+            abc.el_type === "note"
+          );
+        })
+        .map((selectable) => selectable.svgEl)
+        .filter(Boolean);
+      if (svgElements.length) event.elements = [svgElements];
+    }
   }
 
   function connectRoom(nextSynth, room, distance = 0.5, players = 1) {
