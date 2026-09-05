@@ -986,6 +986,14 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   }
 
   applyHumanization(tracks, humanize);
+  for (const track of tracks) {
+    track.sort((a, b) => {
+      const aStart = Number(a.start);
+      const bStart = Number(b.start);
+      if (!Number.isFinite(aStart) || !Number.isFinite(bStart)) return 0;
+      return aStart - bStart;
+    });
+  }
   addPercussionMarkers(tracks, ctx);
 
   return tracks;
