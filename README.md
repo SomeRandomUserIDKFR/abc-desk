@@ -20,11 +20,13 @@ The generated file is `abc-desk.standalone.html`. It bundles the app CSS and JS 
 ## Player backends
 
 The experimental player is now the default route. Use `#oldframework` to load the
-legacy abcjs controller as a fallback:
+legacy abcjs controller as a fallback, or `#testingframework` to explicitly enter
+the experimental major-expansion route:
 
 ```text
 http://localhost:5173/
 http://localhost:5173/#oldframework
+http://localhost:5173/#testingframework
 ```
 
 This route uses the real abcjs soundfont renderer with a small experimental test clock,

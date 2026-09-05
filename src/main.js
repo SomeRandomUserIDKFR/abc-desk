@@ -114,7 +114,9 @@ C,2 E,2 G,2 C2 | G,2 E,2 C,4 | D,2 F,2 A,2 D2 | A,2 F,2 D,4 |`,
 
 const shared = readShareFromLocation();
 const DEFAULT_ABC = shared || SAMPLES.cooleys;
-const oldFramework = window.location.hash.toLowerCase() === "#oldframework";
+const frameworkHash = window.location.hash.toLowerCase();
+const oldFramework = frameworkHash === "#oldframework";
+const testingFramework = frameworkHash === "#testingframework";
 const experimentalFramework = !oldFramework;
 
 const app = document.querySelector("#app");
@@ -172,7 +174,7 @@ app.innerHTML = `
       ${
         experimentalFramework
           ? `<div id="testing-panel" class="lint-panel" aria-label="Player experiment">
-              <div class="lint-header"><h2 class="panel-title">Player experiment</h2><span class="lint-count">default</span></div>
+              <div class="lint-header"><h2 class="panel-title">Player experiment</h2><span class="lint-count">${testingFramework ? "#testingframework" : "default"}</span></div>
               <p id="testing-metrics" class="lint-empty">Render a tune to inspect normalized playback events.</p>
             </div>`
           : ""
