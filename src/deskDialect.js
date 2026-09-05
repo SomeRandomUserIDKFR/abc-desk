@@ -1047,6 +1047,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       ctx?.expressionExpansion,
     );
     applyViolinArticulation(tracks, humanAmount);
+    expandEnsembleTracks(tracks, ctx?.players, humanAmount);
   }
   for (const track of tracks) {
     track.sort((a, b) => {
@@ -1219,6 +1220,43 @@ function applyViolinArticulation(tracks, humanAmount) {
       if (next.volume != null) {
         next.volume = Math.max(12, Math.round(next.volume * (0.985 + humanAmount * 0.02)));
       }
+    }
+  }
+}
+
+function expandEnsembleTracks(tracks, players, humanAmount) {
+  const playerCount = Math.max(1, Math.min(32, Number(players) || 1));
+  if (playerCount <= 1) return;
+
+  const originals = tracks.map((track) =>
+    track.filter(
+      (event) =>
+        event.cmd === "note" &&
+        event.pitch != null &&
+        Number.isFinite(Number(event.start)) &&
+        Number.isFinite(Number(event.end)),
+    ),
+  );
+  for (let player = 1; player < playerCount; player++) {
+    for (let trackIndex = 0; trackIndex < originals.length; trackIndex++) {
+      const sourceNotes = originals[trackIndex];
+      if (!sourceNotes.length) continue;
+      const layer = sourceNotes.map((source, noteIndex) => {
+        const note = { ...source, ensembleReplica: true };
+        const seed = `ensemble:${playerCount}:${player}:${trackIndex}:${noteIndex}:${source.start}:${source.pitch}`;
+        const timing = stableSignedNoise(`${seed}:timing`) * 0.0025 * humanAmount;
+        const gain = 1 + stableSignedNoise(`${seed}:gain`) * 0.045 * humanAmount;
+        note.start = Math.max(0, Number(source.start) + timing);
+        note.end = Math.max(note.start + 0.01, Number(source.end) + timing);
+        if (note.volume != null) {
+          note.volume = Math.max(8, Math.min(118, Math.round(note.volume * gain)));
+        }
+        if (note.cents != null) {
+          note.cents = Number(note.cents) + stableSignedNoise(`${seed}:pitch`) * 2.2 * humanAmount;
+        }
+        return note;
+      });
+      tracks.push(layer);
     }
   }
 }

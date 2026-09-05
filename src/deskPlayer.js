@@ -146,7 +146,9 @@ export function createTestingPlayer({
           }
         }
       }
-      events = tracks.flat().filter((event) => event.cmd === "note");
+      events = tracks.flat().filter(
+        (event) => event.cmd === "note" && !event.ensembleReplica,
+      );
       attachVisualElements(events, visualObj);
       events = groupSimultaneousEvents(events);
       diagnostics = summarizeEvents(sequence?.tracks ?? []);
@@ -560,7 +562,7 @@ function summarizeEvents(tracks, counts = {}) {
     for (const track of tracks) {
       for (const event of track) {
         events++;
-        if (event.cmd === "note") {
+        if (event.cmd === "note" && !event.ensembleReplica) {
           notes++;
           end = Math.max(end, eventEnd(event));
         }
