@@ -4,6 +4,8 @@
  * The current backend delegates to abcjs, but the application only depends on
  * this focused interface so a purpose-built scheduler can replace it later.
  */
+import { normalizePerformanceTracks } from "./deskEvents.js";
+
 export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
   const supportsAudio = abcjs.synth.supportsAudio();
   let controller = null;
@@ -138,11 +140,11 @@ export function createTestingPlayer({
       const bpm = Number(visualObj.getBpm?.());
       secondsPerWholeNote = Number.isFinite(bpm) && bpm > 0 ? 240 / bpm : 2;
       const sequence = visualObj.setUpAudio(currentAudioParams);
-      const tracks = sequence?.tracks ?? [];
+      const tracks = normalizePerformanceTracks(sequence?.tracks ?? []);
       for (const track of tracks) {
         for (const event of track) {
-          if (event.cmd === "note" && event.end == null) {
-            event.end = (Number(event.start) || 0) + (Number(event.duration) || 0);
+          if (event.end == null) {
+            event.end = event.start + event.duration;
           }
         }
       }
@@ -151,7 +153,7 @@ export function createTestingPlayer({
       );
       attachVisualElements(events, visualObj);
       events = groupSimultaneousEvents(events);
-      diagnostics = summarizeEvents(sequence?.tracks ?? []);
+      diagnostics = summarizeEvents(tracks);
       paused = false;
     },
 
