@@ -1679,7 +1679,13 @@ function reshapeRamp(run, dir, humanAmount = 0) {
     const edge = Math.min(t, 1 - t);
     const noise = stableSignedNoise(`dynamic-ramp:${dir}:${run.length}:${k}`);
     const imperfect = noise * Math.min(7, (hi - lo) * 0.12) * humanAmount * Math.min(1, edge * 4);
-    const v = curve + imperfect;
+    const bowed = isBowedStringInstrument(run[k].instrument);
+    const pressure = bowed
+      ? dir > 0
+        ? 1 + 0.1 * humanAmount * Math.pow(t, 1.35)
+        : 1 - 0.08 * humanAmount * Math.pow(1 - t, 1.2)
+      : 1;
+    const v = curve * pressure + imperfect;
     run[k].volume = Math.max(12, Math.min(127, Math.round(v)));
   }
 }
