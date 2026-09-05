@@ -273,7 +273,7 @@ function summarizeEvents(tracks, counts = {}) {
         events++;
         if (event.cmd === "note") {
           notes++;
-          end = Math.max(end, Number(event.end) || 0);
+          end = Math.max(end, eventEnd(event));
         }
       }
     }
