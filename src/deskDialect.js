@@ -991,7 +991,8 @@ export function balanceHeldNotes(tracks, ctx = {}) {
 }
 
 function applyHumanization(tracks, humanize) {
-  const amount = Math.max(0, Math.min(1, Number(humanize?.amount ?? 0)));
+  // Keep the public 0–1 control range while making moderate values audible.
+  const amount = Math.max(0, Math.min(1, Number(humanize?.amount ?? 0) * 2));
   if (!amount) return;
 
   for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
