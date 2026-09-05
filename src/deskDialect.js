@@ -1208,17 +1208,41 @@ function applyViolinArticulation(tracks, humanAmount) {
       const slurred =
         note.endType === "tenuto" ||
         Number(note.gap) < 0;
-      if (!slurred || step <= 0 || duration < 0.08) continue;
+      const interval = Math.abs(Number(next.pitch) - Number(note.pitch));
+      if (step <= 0 || duration < 0.08) continue;
 
-      // Let a slurred violin note overlap its successor slightly. The small
-      // attack reduction keeps the sound connected without flattening accents.
-      const overlap = Math.min(0.012, step * 0.08) * (0.75 + humanAmount * 0.25);
-      note.end = Math.max(note.start + 0.01, Math.min(next.start + overlap, note.end + overlap));
-      if (note.volume != null) {
-        note.volume = Math.max(12, Math.round(note.volume * (0.96 - humanAmount * 0.035)));
-      }
-      if (next.volume != null) {
-        next.volume = Math.max(12, Math.round(next.volume * (0.985 + humanAmount * 0.02)));
+      if (slurred) {
+        const wideLeap = interval >= 5;
+        const overlap = Math.min(wideLeap ? 0.018 : 0.012, step * 0.1) *
+          (0.75 + humanAmount * 0.25);
+        note.end = Math.max(
+          note.start + 0.01,
+          Math.min(next.start + overlap, note.end + overlap),
+        );
+        note.articulation = wideLeap ? "portamento" : "legato";
+        if (wideLeap) {
+          note.cents = (Number(note.cents) || 0) + Math.sign(next.pitch - note.pitch) * 0.8;
+        }
+        if (note.volume != null) {
+          note.volume = Math.max(12, Math.round(note.volume * (0.96 - humanAmount * 0.035)));
+        }
+        if (next.volume != null) {
+          next.volume = Math.max(12, Math.round(next.volume * (0.985 + humanAmount * 0.02)));
+        }
+      } else {
+        const detached = Math.max(0, next.start - note.end);
+        const accent = Number(note.volume) >= 96;
+        note.articulation = accent ? "accent-detache" : "detache";
+        note.end = Math.max(
+          note.start + 0.01,
+          note.end - Math.min(0.018, detached * 0.18 + 0.004),
+        );
+        if (note.volume != null) {
+          note.volume = Math.max(
+            12,
+            Math.min(118, Math.round(note.volume * (accent ? 1.025 : 0.985))),
+          );
+        }
       }
     }
   }
