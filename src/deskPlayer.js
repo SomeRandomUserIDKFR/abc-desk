@@ -1,3 +1,5 @@
+import { balanceHeldNotes } from "./deskDialect.js";
+
 /**
  * ABC Desk's player boundary.
  *
@@ -101,6 +103,7 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
   let paused = false;
   let audioContext = null;
   let activeSources = [];
+  let currentAudioParams = null;
 
   return {
     supportsAudio: true,
@@ -129,8 +132,18 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
     setTune(nextVisualObj, audioParams) {
       invalidate();
       visualObj = nextVisualObj;
+      currentAudioParams = audioParams;
       const sequence = visualObj.setUpAudio(audioParams);
-      events = (sequence?.tracks ?? []).flat().filter((event) => event.cmd === "note");
+      const tracks = sequence?.tracks ?? [];
+      for (const track of tracks) {
+        for (const event of track) {
+          if (event.cmd === "note" && event.end == null) {
+            event.end = (Number(event.start) || 0) + (Number(event.duration) || 0);
+          }
+        }
+      }
+      balanceHeldNotes(tracks, audioParams?.callbackContext ?? {});
+      events = tracks.flat().filter((event) => event.cmd === "note");
       diagnostics = summarizeEvents(sequence?.tracks ?? []);
       paused = false;
     },
@@ -208,11 +221,18 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
     const gain = audioContext.createGain();
     const now = audioContext.currentTime;
     const frequency = 440 * Math.pow(2, (Number(event.pitch) - 69) / 12);
-    oscillator.type = "triangle";
+    oscillator.type = oscillatorType(event, currentAudioParams);
     oscillator.frequency.value = frequency;
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.linearRampToValueAtTime(
-      Math.min(0.18, Math.max(0.02, (Number(event.volume) || 64) / 700)),
+      Math.min(
+        0.18,
+        Math.max(
+          0.02,
+          ((Number(event.volume) || 64) / 700) *
+            toneVolume(currentAudioParams),
+        ),
+      ),
       now + 0.012,
     );
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
@@ -223,6 +243,25 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
     oscillator.addEventListener("ended", () => {
       activeSources = activeSources.filter((source) => source !== oscillator);
     }, { once: true });
+  }
+
+  function oscillatorType(event, params) {
+    const instrument = String(
+      event.instrument ?? params?.callbackContext?.forceInstrument ?? "",
+    ).toLowerCase();
+    const program = Number(event.instrument ?? params?.program);
+    if (/violin|fiddle|viola|cello|string/.test(instrument)) return "sawtooth";
+    if (/flute|clarinet|oboe|recorder|whistle/.test(instrument)) return "sine";
+    if (/trumpet|trombone|tuba|horn/.test(instrument)) return "square";
+    if ([40, 41, 42, 43, 110].includes(program)) return "sawtooth";
+    if ([73, 74, 78, 79].includes(program)) return "sine";
+    if ([56, 57, 58, 60].includes(program)) return "square";
+    return "triangle";
+  }
+
+  function toneVolume(params) {
+    const multiplier = Number(params?.soundFontVolumeMultiplier);
+    return Number.isFinite(multiplier) ? Math.min(1.5, Math.max(0.45, multiplier)) : 1;
   }
 
   function eventDuration(event) {
