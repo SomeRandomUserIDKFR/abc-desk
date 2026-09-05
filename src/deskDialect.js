@@ -1579,7 +1579,7 @@ function adaptiveStringInstrument(pitch) {
   if (midi >= 76) return "violin";
   if (midi >= 62) return "viola";
   if (midi >= 48) return "cello";
-  return "contrabass";
+  return "acoustic_bass";
 }
 
 function isBowedStringInstrument(instrument) {
@@ -1801,7 +1801,11 @@ function reshapeRamp(run, dir, humanAmount = 0) {
 export function programToSoundfontName(program) {
   if (program == null || program < 0 || program > 127) return undefined;
   const table = abcjs.synth?.instrumentIndexToName;
-  if (Array.isArray(table) && table[program]) return table[program];
+  if (Array.isArray(table) && table[program]) {
+    // abcjs's contrabass region is unreliable for some low notes; its
+    // acoustic bass bank provides the same register with dependable samples.
+    return program === 43 ? "acoustic_bass" : table[program];
+  }
   return undefined;
 }
 
