@@ -261,6 +261,7 @@ function amplifyExperimentalHuman(audioParams) {
     ...audioParams,
     callbackContext: {
       ...audioParams.callbackContext,
+      experimentalPerformance: true,
       humanize: {
         ...audioParams.callbackContext.humanize,
         // The experiment is deliberately expressive: Human remains the master

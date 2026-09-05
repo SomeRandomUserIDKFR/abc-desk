@@ -1010,6 +1010,9 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   }
 
   applyHumanization(tracks, humanize);
+  if (ctx?.experimentalPerformance) {
+    shapeExperimentalPerformance(tracks, humanAmount);
+  }
   for (const track of tracks) {
     track.sort((a, b) => {
       const aStart = Number(a.start);
@@ -1017,6 +1020,45 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       if (!Number.isFinite(aStart) || !Number.isFinite(bStart)) return 0;
       return aStart - bStart;
     });
+  }
+
+  function shapeExperimentalPerformance(tracks, humanAmount) {
+    for (const track of tracks) {
+      const notes = track.filter(
+        (event) =>
+          event.cmd === "note" &&
+          event.pitch != null &&
+          Number.isFinite(Number(event.start)) &&
+          Number.isFinite(Number(event.end)),
+      );
+      if (!notes.length) continue;
+
+      for (let index = 0; index < notes.length; index++) {
+        const note = notes[index];
+        const next = notes[index + 1];
+        const duration = Math.max(0.001, note.end - note.start);
+        const gap = next ? Math.max(0, next.start - note.end) : 0;
+        const phrasePosition = (index % 8) / 7;
+        const arc = Math.sin(phrasePosition * Math.PI);
+
+        if (note.volume != null) {
+          const phraseFactor = 0.91 + arc * 0.13 * humanAmount;
+          note.volume = Math.max(10, Math.min(118, Math.round(note.volume * phraseFactor)));
+        }
+
+        if (gap > 0.025 && duration < 2) {
+          note.end = Math.max(note.start + 0.01, note.end - Math.min(0.035, gap * 0.35 * humanAmount));
+        }
+
+        if (duration >= 0.45) {
+          const vibratoPhase = stableUnitNoise(`vibrato:${index}:${note.start}:${note.pitch}`);
+          const vibratoDepth = Math.min(14, 3 + duration * 2.5) * humanAmount;
+          note.cents =
+            (Number(note.cents) || 0) +
+            Math.round((vibratoPhase - 0.5) * vibratoDepth * 10) / 10;
+        }
+      }
+    }
   }
   addPercussionMarkers(tracks, ctx);
 
@@ -1450,6 +1492,7 @@ export function deskAudioParams(meta) {
         drum2: ctx?.drum2 ?? meta.drum2,
         tone: ctx?.tone ?? meta.tone,
         humanize: ctx?.humanize ?? meta.humanize,
+        experimentalPerformance: ctx?.experimentalPerformance ?? false,
       }),
   };
 
