@@ -125,10 +125,9 @@ export const INSTRUMENTS = {
   cello: { program: 42, label: "Cello" },
   chello: { program: 42, label: "Cello" },
   violoncello: { program: 42, label: "Cello" },
-  // Use abcjs's dependable acoustic-bass bank for low-string playback.
-  contrabass: { program: 32, label: "Contrabass" },
-  "double bass": { program: 32, label: "Double Bass" },
-  "double-bass": { program: 32, label: "Double Bass" },
+  contrabass: { program: 43, label: "Contrabass" },
+  "double bass": { program: 43, label: "Double Bass" },
+  "double-bass": { program: 43, label: "Double Bass" },
   harp: { program: 46, label: "Orchestral Harp" },
   timpani: { program: 47, label: "Timpani" },
   string: { program: 48, label: "Adaptive Strings", adaptive: true },
@@ -1580,7 +1579,7 @@ function adaptiveStringInstrument(pitch) {
   if (midi >= 76) return "violin";
   if (midi >= 62) return "viola";
   if (midi >= 48) return "cello";
-  return "acoustic_bass";
+  return "contrabass";
 }
 
 function isBowedStringInstrument(instrument) {
@@ -1802,11 +1801,7 @@ function reshapeRamp(run, dir, humanAmount = 0) {
 export function programToSoundfontName(program) {
   if (program == null || program < 0 || program > 127) return undefined;
   const table = abcjs.synth?.instrumentIndexToName;
-  if (Array.isArray(table) && table[program]) {
-    // abcjs's contrabass region is unreliable for some low notes; its
-    // acoustic bass bank provides the same register with dependable samples.
-    return program === 43 ? "acoustic_bass" : table[program];
-  }
+  if (Array.isArray(table) && table[program]) return table[program];
   return undefined;
 }
 
