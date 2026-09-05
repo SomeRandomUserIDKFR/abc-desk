@@ -100,6 +100,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
   let synth = null;
   let roomBus = null;
   let secondsPerWholeNote = 2;
+  let pausedSeconds = 0;
 
   return {
     supportsAudio: true,
@@ -186,7 +187,13 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
   };
 
   async function play() {
-    if (!visualObj || paused) return;
+    if (!visualObj) return;
+    if (synth && paused) {
+      synth.start();
+      paused = false;
+      scheduleCursor(pausedSeconds);
+      return;
+    }
     synth = new abcjs.synth.CreateSynth();
     await synth.init({ visualObj, options: currentAudioParams });
     await synth.prime();
@@ -198,11 +205,15 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
       currentAudioParams?.callbackContext?.players,
     );
     cursorControl.onStart();
+    pausedSeconds = 0;
+    scheduleCursor(0);
+  }
+
+  function scheduleCursor(fromSeconds) {
     for (const event of events) {
-      const delay = Math.max(
-        0,
-        Math.round((Number(event.start) || 0) * secondsPerWholeNote * 1000),
-      );
+      const eventSeconds = (Number(event.start) || 0) * secondsPerWholeNote;
+      if (eventSeconds < fromSeconds) continue;
+      const delay = Math.max(0, Math.round((eventSeconds - fromSeconds) * 1000));
       timers.push(window.setTimeout(() => cursorControl.onEvent({
         elements: event.elements || event.elts || [],
         highlightDuration: eventDuration(event) * secondsPerWholeNote * 1000,
@@ -215,15 +226,13 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     timers.push(window.setTimeout(() => {
       cursorControl.onFinished();
       paused = true;
-    }, Math.round(end * secondsPerWholeNote * 1000) + 20));
+    }, Math.max(0, Math.round((end * secondsPerWholeNote - fromSeconds) * 1000)) + 20));
   }
 
   function pause() {
     paused = true;
     clearTimers();
-    synth?.stop();
-    roomBus?.input.disconnect();
-    roomBus = null;
+    pausedSeconds = synth?.pause?.() ?? pausedSeconds;
   }
 
   function reset() {
