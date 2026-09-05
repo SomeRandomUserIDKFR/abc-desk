@@ -365,7 +365,10 @@ export function createTestingPlayer({
           ? index / (nextSynth.directSource.length - 1) - 0.5
           : 0;
       const variation = Math.min(0.08, (playerCount - 1) * 0.012);
-      playerGain.gain.value = 1 + Math.sin((index + 1) * 2.17) * variation;
+      // Keep larger sections full without letting layered replicas dominate.
+      const ensembleScale = 1 / Math.sqrt(playerCount);
+      playerGain.gain.value =
+        ensembleScale * (1 + Math.sin((index + 1) * 2.17) * variation);
       const stagePosition =
         Number.isFinite(Number(voicePans[index]))
           ? Number(voicePans[index])
@@ -614,6 +617,9 @@ function summarizeEvents(tracks, counts = {}, graph = null) {
       }
     }
   }
+  const allNotes = tracks.flat().filter((event) => event.cmd === "note");
+  const replicaNotes = allNotes.filter((event) => event.ensembleReplica).length;
+  const playerCount = graph?.player.count ?? 1;
   return {
     tracks: tracks.length,
     notes,
@@ -625,7 +631,9 @@ function summarizeEvents(tracks, counts = {}, graph = null) {
     tempoEvents: graph?.tempo.length ?? 0,
     articulations: graph?.articulations ?? {},
     roomEvents: graph?.room.length ?? 0,
-    players: graph?.player.count ?? 1,
+    players: playerCount,
+    ensembleLayers: replicaNotes ? Math.max(0, playerCount - 1) : 0,
+    ensembleGain: Number((1 / Math.sqrt(Math.max(1, playerCount))).toFixed(3)),
     performance: graph
       ? {
           phrases: graph.phrases,

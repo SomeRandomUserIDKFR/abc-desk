@@ -763,7 +763,7 @@ function updateTestingMetrics() {
   if (!testingMetrics) return;
   const metrics = player?.getDiagnostics();
   testingMetrics.textContent = metrics
-    ? `${player.backendName}: ${metrics.tracks} tracks · ${metrics.notes} notes · ${metrics.events} events · ${metrics.duration}s · ${metrics.phrases} phrases · ${metrics.expressionEvents} curves · ${metrics.toneEvents} tone changes · ${metrics.players} players · ${formatArticulations(metrics.articulations)}`
+    ? `${player.backendName}: ${metrics.tracks} tracks · ${metrics.notes} notes · ${metrics.events} events · ${metrics.duration}s · ${metrics.phrases} phrases · ${metrics.expressionEvents} curves · ${metrics.toneEvents} tone changes · ${metrics.players} players · ${metrics.ensembleGain}x section gain · ${formatArticulations(metrics.articulations)}`
     : "Load playback to inspect normalized playback events.";
   renderPerformanceTimeline(metrics);
 }

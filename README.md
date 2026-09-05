@@ -101,6 +101,10 @@ The **Articulation lab** sample compares `!staccato!`, `!tenuto!`,
 `!marcato!`, and `!tremolo!` markers in the experimental player. Their
 normalized counts appear in the player diagnostics.
 
+Ensembles now receive perceptual loudness compensation: layered sections scale
+approximately by the inverse square root of player count, preserving width and
+variation without making `Players: 8` overwhelm the solo balance.
+
 The experimental route also shows a live **Performance map** beneath the
 playback controls. Phrase spans, expression curves, and phrase-breath tempo
 shaping are shown as separate layers, with the playhead following the audible
