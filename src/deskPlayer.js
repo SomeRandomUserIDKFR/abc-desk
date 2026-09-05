@@ -169,7 +169,12 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     await synth.init({ visualObj, options: currentAudioParams });
     await synth.prime();
     synth.start();
-    connectRoom(synth, currentAudioParams?.callbackContext?.room);
+    connectRoom(
+      synth,
+      currentAudioParams?.callbackContext?.room,
+      currentAudioParams?.callbackContext?.distance,
+      currentAudioParams?.callbackContext?.players,
+    );
     cursorControl.onStart();
     for (const event of events) {
       const delay = Math.max(0, Math.round((Number(event.start) || 0) * 1000));
@@ -224,7 +229,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     return (Number(event.start) || 0) + eventDuration(event);
   }
 
-  function connectRoom(nextSynth, room) {
+  function connectRoom(nextSynth, room, distance = 0.5, players = 1) {
     if (!room || room.mix <= 0 || !nextSynth.directSource?.length) return;
     const context = nextSynth.directSource[0].context;
     const input = context.createGain();
@@ -240,14 +245,26 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
       }
     }
     convolver.buffer = impulse;
-    dry.gain.value = 1 - room.mix;
-    wet.gain.value = room.mix;
+    const spacing = Math.max(0, Math.min(1, Number(distance) || 0));
+    const playerCount = Math.max(1, Number(players) || 1);
+    const directLevel = 1 - spacing * 0.28;
+    dry.gain.value = directLevel * (1 - room.mix);
+    wet.gain.value = Math.min(0.6, room.mix + spacing * 0.18);
     input.connect(dry).connect(context.destination);
     input.connect(convolver).connect(wet).connect(context.destination);
-    for (const source of nextSynth.directSource) {
+    nextSynth.directSource.forEach((source, index) => {
       source.disconnect();
-      source.connect(input);
-    }
+      const playerGain = context.createGain();
+      const playerPan = context.createStereoPanner();
+      const playerPosition =
+        nextSynth.directSource.length > 1
+          ? index / (nextSynth.directSource.length - 1) - 0.5
+          : 0;
+      const variation = Math.min(0.08, (playerCount - 1) * 0.012);
+      playerGain.gain.value = 1 + Math.sin((index + 1) * 2.17) * variation;
+      playerPan.pan.value = playerPosition * spacing;
+      source.connect(playerGain).connect(playerPan).connect(input);
+    });
     roomBus = { input };
   }
 

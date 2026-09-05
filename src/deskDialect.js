@@ -5,9 +5,10 @@ import abcjs from "abcjs";
  * Compiles to meta + clean ABC for abcjs.
  */
 
-const FRIENDLY_RE = /^(Inst|Tone|Human|Imperfect|Room)\s*:\s*(.*)$/i;
+const FRIENDLY_RE =
+  /^(Inst|Tone|Human|Imperfect|Room|Distance|Players)\s*:\s*(.*)$/i;
 const ENCODED_RE =
-  /^(?:%%|I:)\s*desk-(instrument|tone|human|imperfect|room)\s+(.+)$/i;
+  /^(?:%%|I:)\s*desk-(instrument|tone|human|imperfect|room|distance|players)\s+(.+)$/i;
 const UNKNOWN_DESK_RE = /^(?:%%|I:)\s*desk-([a-z0-9-]+)\b/i;
 const MIDI_PROGRAM_LINE_RE = /^%%\s*MIDI\s+program\b(.*)$/i;
 const DRUM_FRIENDLY_RE = /^(Drum1|Drum2)\s*:\s*(.*)$/i;
@@ -398,6 +399,16 @@ export function resolveRoom(raw) {
   return hit ? { ...hit, name: key } : null;
 }
 
+export function resolveDistance(raw) {
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : null;
+}
+
+export function resolvePlayers(raw) {
+  const value = Number(raw);
+  return Number.isInteger(value) ? Math.max(1, Math.min(32, value)) : null;
+}
+
 /**
  * @param {string} raw
  * @returns {{ label: string, name: string, amount: number } | null}
@@ -578,6 +589,8 @@ export function parseDeskHeaders(source) {
   let toneRaw = null;
   let humanRaw = null;
   let roomRaw = null;
+  let distanceRaw = null;
+  let playersRaw = null;
   let drum1Raw = null;
   let drum2Raw = null;
   /** @type {number | null} */
@@ -597,7 +610,9 @@ export function parseDeskHeaders(source) {
       if (kind === "inst") instrumentRaw = value;
       else if (kind === "tone") toneRaw = value;
       else if (kind === "human" || kind === "imperfect") humanRaw = value;
-      else roomRaw = value;
+      else if (kind === "room") roomRaw = value;
+      else if (kind === "distance") distanceRaw = value;
+      else playersRaw = value;
       continue;
     }
 
@@ -608,7 +623,9 @@ export function parseDeskHeaders(source) {
       if (kind === "instrument") instrumentRaw = value;
       else if (kind === "tone") toneRaw = value;
       else if (kind === "human" || kind === "imperfect") humanRaw = value;
-      else roomRaw = value;
+      else if (kind === "room") roomRaw = value;
+      else if (kind === "distance") distanceRaw = value;
+      else playersRaw = value;
       continue;
     }
 
@@ -674,6 +691,8 @@ export function parseDeskHeaders(source) {
   const tone = resolveTone(toneRaw);
   const humanize = resolveHumanization(humanRaw);
   const room = resolveRoom(roomRaw);
+  const distance = resolveDistance(distanceRaw);
+  const players = resolvePlayers(playersRaw);
   const drum1 = drum1Raw ? (resolveDrumSound(drum1Raw) ?? DEFAULT_DRUM_1) : undefined;
   const drum2 = drum2Raw ? (resolveDrumSound(drum2Raw) ?? DEFAULT_DRUM_2) : undefined;
   const hasMultipleMidiPrograms =
@@ -690,6 +709,12 @@ export function parseDeskHeaders(source) {
   }
   if (roomRaw && !room) {
     warnings.push(`Unknown Room: “${roomRaw}” (try dry, studio, chamber, concert, or cathedral)`);
+  }
+  if (distanceRaw && distance == null) {
+    warnings.push(`Unknown Distance: “${distanceRaw}” (use a value from 0 to 1)`);
+  }
+  if (playersRaw && players == null) {
+    warnings.push(`Unknown Players: “${playersRaw}” (use a whole number from 1 to 32)`);
   }
   if (drum1Raw && !resolveDrumSound(drum1Raw)) {
     warnings.push(`Unknown Drum1: “${drum1Raw}” (try acoustic-snare, bass-drum-1, closed-hi-hat, or a MIDI drum number 35-81)`);
@@ -740,6 +765,10 @@ export function parseDeskHeaders(source) {
       humanRaw,
       room,
       roomRaw,
+      distance,
+      distanceRaw,
+      players,
+      playersRaw,
       midiProgram: midiProgram ?? undefined,
       hasMultipleMidiPrograms,
       instrumentSource:
@@ -1482,6 +1511,8 @@ export function deskAudioParams(meta) {
       tone: meta.tone,
       humanize: meta.humanize,
       room: meta.room,
+      distance: meta.distance,
+      players: meta.players,
     },
     pan,
     sequenceCallback: (tracks, ctx) =>
@@ -1537,6 +1568,12 @@ export function deskStatusFragment(meta) {
   }
   if (meta.room) {
     parts.push(`Room ${meta.room.label}`);
+  }
+  if (meta.players) {
+    parts.push(`Players ${meta.players}`);
+  }
+  if (meta.distance != null) {
+    parts.push(`Distance ${meta.distance}`);
   }
   if (meta.humanize?.amount) {
     parts.push(meta.humanize.label);
