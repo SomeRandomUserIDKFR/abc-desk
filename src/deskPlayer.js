@@ -166,6 +166,14 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
       try {
         await wavSynth.init({ visualObj: nextVisualObj, options });
         await wavSynth.prime();
+        const room = options?.callbackContext?.room;
+        if (room && room.mix > 0) {
+          const rendered = await renderRoomWav(wavSynth.getAudioBuffer(), room);
+          return {
+            url: URL.createObjectURL(rendered),
+            stop: () => wavSynth.stop?.(),
+          };
+        }
         return {
           url: wavSynth.download(),
           stop: () => wavSynth.stop?.(),
@@ -345,6 +353,85 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     roomBus = { input };
   }
 
+}
+
+async function renderRoomWav(audioBuffer, room) {
+  const OfflineContext =
+    window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!OfflineContext) {
+    throw new Error("Room WAV export requires OfflineAudioContext.");
+  }
+  const tail = Math.ceil(room.decay * audioBuffer.sampleRate);
+  const context = new OfflineContext(
+    audioBuffer.numberOfChannels,
+    audioBuffer.length + tail,
+    audioBuffer.sampleRate,
+  );
+  const source = context.createBufferSource();
+  source.buffer = audioBuffer;
+  const input = context.createGain();
+  const dry = context.createGain();
+  const wet = context.createGain();
+  const convolver = context.createConvolver();
+  const impulse = context.createBuffer(2, Math.max(1, tail), audioBuffer.sampleRate);
+  for (let channel = 0; channel < impulse.numberOfChannels; channel++) {
+    const data = impulse.getChannelData(channel);
+    for (let index = 0; index < data.length; index++) {
+      data[index] = (Math.random() * 2 - 1) * Math.pow(1 - index / data.length, 2.5);
+    }
+  }
+  convolver.buffer = impulse;
+  dry.gain.value = 1 - room.mix;
+  wet.gain.value = room.mix;
+  input.connect(dry).connect(context.destination);
+  input.connect(convolver).connect(wet).connect(context.destination);
+  source.connect(input);
+  source.start();
+  return encodeWav(await context.startRendering());
+}
+
+function encodeWav(audioBuffer) {
+  const channels = audioBuffer.numberOfChannels;
+  const length = audioBuffer.length * channels * 2 + 44;
+  const buffer = new ArrayBuffer(length);
+  const view = new DataView(buffer);
+  let offset = 0;
+  const write32 = (value) => {
+    view.setUint32(offset, value, true);
+    offset += 4;
+  };
+  const write16 = (value) => {
+    view.setUint16(offset, value, true);
+    offset += 2;
+  };
+  write32(0x46464952);
+  write32(length - 8);
+  write32(0x45564157);
+  write32(0x20746d66);
+  write32(16);
+  write16(1);
+  write16(channels);
+  write32(audioBuffer.sampleRate);
+  write32(audioBuffer.sampleRate * channels * 2);
+  write16(channels * 2);
+  write16(16);
+  write32(0x61746164);
+  write32(length - 44);
+  const data = Array.from({ length: channels }, (_, channel) =>
+    audioBuffer.getChannelData(channel),
+  );
+  for (let index = 0; index < audioBuffer.length; index++) {
+    for (let channel = 0; channel < channels; channel++) {
+      const sample = Math.max(-1, Math.min(1, data[channel][index]));
+      view.setInt16(
+        offset,
+        (sample < 0 ? sample * 32768 : sample * 32767) | 0,
+        true,
+      );
+      offset += 2;
+    }
+  }
+  return new Blob([buffer], { type: "audio/wav" });
 }
 
 function eventDuration(event) {
