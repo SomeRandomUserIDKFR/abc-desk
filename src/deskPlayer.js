@@ -34,9 +34,6 @@ export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
       if (!controller) return;
       diagnostics = inspectTune(visualObj, audioParams);
       controller.setTune(visualObj, false, audioParams);
-      this.invalidate();
-      controller.visualObj = visualObj;
-      controller.options = audioParams;
       controller.disable(false);
     },
 
