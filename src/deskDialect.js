@@ -1077,6 +1077,12 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       if (!notes.length) continue;
 
       const phraseProfile = createPlayerPhraseProfile(playerCount, trackIndex);
+      const trackTimingNoise = stableSignedNoise(
+        `track-timing:${playerCount}:${trackIndex}`,
+      );
+      const trackTimingOffset =
+        trackTimingNoise * (0.0025 + stableUnitNoise(`track-timing-width:${trackIndex}`) * 0.005) *
+        Math.sqrt(humanAmount);
       let phraseStart = 0;
       for (let index = 0; index < notes.length; index++) {
         const note = notes[index];
@@ -1108,8 +1114,9 @@ export function balanceHeldNotes(tracks, ctx = {}) {
           playerCount > 1
             ? (playerNoise * 0.003 + breath * phraseProfile.timingBreath) * humanAmount
             : 0;
-        note.start = Math.max(0, note.start + playerTiming);
-        note.end = Math.max(note.start + 0.01, note.end + playerTiming);
+        const timingOffset = trackTimingOffset + playerTiming;
+        note.start = Math.max(0, note.start + timingOffset);
+        note.end = Math.max(note.start + 0.01, note.end + timingOffset);
 
         if (note.volume != null) {
           const phraseFactor =
@@ -1154,10 +1161,11 @@ export function balanceHeldNotes(tracks, ctx = {}) {
             Math.min(14, 3 + duration * 2.5) * phraseProfile.vibratoDepth * humanAmount;
           // Keep attacks closer to pitch center; sustained notes receive the
           // larger drift that stands in for a delayed vibrato onset.
-          const sustainFactor = Math.min(1, Math.max(0, (duration - 0.35) / 1.1));
+          const sustainFactor = Math.min(1, 1 - Math.exp(-Math.max(0, duration - 0.18) * 2.4));
+          const vibratoBuild = Math.pow(sustainFactor, 1.35);
           note.cents =
             (Number(note.cents) || 0) +
-            Math.round((vibratoPhase - 0.5) * vibratoDepth * sustainFactor * 10) / 10;
+            Math.round((vibratoPhase - 0.5) * vibratoDepth * vibratoBuild * 10) / 10;
           if (isBowedStringInstrument(note.instrument) && Number(note.pitch) >= 79) {
             const registerFactor = Math.min(1, (Number(note.pitch) - 79) / 24);
             const drift = stableSignedNoise(
@@ -1169,7 +1177,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
             note.cents +=
               drift *
               (0.3 + registerFactor * 0.7) *
-              sustainFactor *
+              vibratoBuild *
               driftAmount;
           }
           if (playerCount > 1) {
