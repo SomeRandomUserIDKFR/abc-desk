@@ -1064,12 +1064,20 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       );
       if (!notes.length) continue;
 
+      let phraseStart = 0;
       for (let index = 0; index < notes.length; index++) {
         const note = notes[index];
         const next = notes[index + 1];
         const duration = Math.max(0.001, note.end - note.start);
         const gap = next ? Math.max(0, next.start - note.end) : 0;
-        const phrasePosition = (index % 8) / 7;
+        const previous = notes[index - 1];
+        const leap = previous ? Math.abs(Number(note.pitch) - Number(previous.pitch)) : 0;
+        if (index > 0 && (gap > 0.08 || leap >= 7 || duration > 2.5)) {
+          phraseStart = index;
+        }
+        const phraseLength = Math.max(1, Math.min(12, index - phraseStart + 1));
+        const phrasePosition =
+          phraseLength <= 1 ? 0 : Math.min(1, (index - phraseStart) / 7);
         const arc = Math.sin(phrasePosition * Math.PI);
         const playerNoise = stableSignedNoise(
           `player:${playerCount}:${trackIndex}:${index}:${note.start}:${note.pitch}`,
@@ -1090,6 +1098,12 @@ export function balanceHeldNotes(tracks, ctx = {}) {
 
         if (gap > 0.025 && duration < 2) {
           note.end = Math.max(note.start + 0.01, note.end - Math.min(0.035, gap * 0.35 * humanAmount));
+        }
+
+        if (note.volume != null) {
+          const bowDirection = index % 2 === 0 ? 1 : -1;
+          const bowChange = (0.018 * bowDirection + playerNoise * 0.022) * humanAmount;
+          note.volume = Math.max(10, Math.min(118, Math.round(note.volume * (1 + bowChange))));
         }
 
         if (duration >= 0.45) {

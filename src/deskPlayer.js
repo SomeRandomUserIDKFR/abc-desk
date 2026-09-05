@@ -236,6 +236,11 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     const dry = context.createGain();
     const wet = context.createGain();
     const convolver = context.createConvolver();
+    const reflections = [
+      { delay: 0.013, level: 0.11, pan: -0.55 },
+      { delay: 0.027, level: 0.08, pan: 0.48 },
+      { delay: 0.043, level: 0.05, pan: -0.25 },
+    ];
     const length = Math.max(1, Math.ceil(context.sampleRate * room.decay));
     const impulse = context.createBuffer(2, length, context.sampleRate);
     for (let channel = 0; channel < impulse.numberOfChannels; channel++) {
@@ -252,6 +257,16 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     wet.gain.value = Math.min(0.6, room.mix + spacing * 0.18);
     input.connect(dry).connect(context.destination);
     input.connect(convolver).connect(wet).connect(context.destination);
+    for (const reflection of reflections) {
+      const delay = context.createDelay(0.08);
+      const reflectionGain = context.createGain();
+      const reflectionPan = context.createStereoPanner();
+      delay.delayTime.value = reflection.delay;
+      reflectionGain.gain.value =
+        reflection.level * (1 - spacing * 0.22) * Math.min(1.2, playerCount / 4);
+      reflectionPan.pan.value = reflection.pan * Math.min(1, spacing + 0.2);
+      input.connect(delay).connect(reflectionGain).connect(reflectionPan).connect(context.destination);
+    }
     nextSynth.directSource.forEach((source, index) => {
       source.disconnect();
       const playerGain = context.createGain();
