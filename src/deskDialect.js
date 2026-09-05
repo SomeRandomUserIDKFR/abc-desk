@@ -1040,7 +1040,12 @@ export function balanceHeldNotes(tracks, ctx = {}) {
 
   applyHumanization(tracks, humanize);
   if (ctx?.experimentalPerformance) {
-    shapeExperimentalPerformance(tracks, humanAmount, ctx?.players);
+    shapeExperimentalPerformance(
+      tracks,
+      humanAmount,
+      ctx?.players,
+      ctx?.expressionExpansion,
+    );
   }
   for (const track of tracks) {
     track.sort((a, b) => {
@@ -1051,7 +1056,12 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     });
   }
 
-  function shapeExperimentalPerformance(tracks, humanAmount, players = 1) {
+  function shapeExperimentalPerformance(
+    tracks,
+    humanAmount,
+    players = 1,
+    expressionExpansion = false,
+  ) {
     const playerCount = Math.max(1, Math.min(32, Number(players) || 1));
     for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
       const track = tracks[trackIndex];
@@ -1079,6 +1089,9 @@ export function balanceHeldNotes(tracks, ctx = {}) {
         const phrasePosition =
           phraseLength <= 1 ? 0 : Math.min(1, (index - phraseStart) / 7);
         const arc = Math.sin(phrasePosition * Math.PI);
+        const expressionArc = expressionExpansion
+          ? 1 + (arc - 0.25) * 0.28 * humanAmount
+          : 1;
         const playerNoise = stableSignedNoise(
           `player:${playerCount}:${trackIndex}:${index}:${note.start}:${note.pitch}`,
         );
@@ -1087,7 +1100,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
         note.end = Math.max(note.start + 0.01, note.end + playerTiming);
 
         if (note.volume != null) {
-          const phraseFactor = 0.91 + arc * 0.13 * humanAmount;
+          const phraseFactor = (0.91 + arc * 0.13 * humanAmount) * expressionArc;
           const playerFactor =
             1 + playerNoise * Math.min(0.06, (playerCount - 1) * 0.006) * humanAmount;
           note.volume = Math.max(
@@ -1097,7 +1110,16 @@ export function balanceHeldNotes(tracks, ctx = {}) {
         }
 
         if (gap > 0.025 && duration < 2) {
-          note.end = Math.max(note.start + 0.01, note.end - Math.min(0.035, gap * 0.35 * humanAmount));
+          const release = expressionExpansion ? 0.55 : 0.35;
+          note.end = Math.max(
+            note.start + 0.01,
+            note.end - Math.min(0.06, gap * release * humanAmount),
+          );
+        }
+
+        if (expressionExpansion && note.volume != null && duration >= 0.3) {
+          const sustain = 1 + Math.sin((index + trackIndex) * 0.73) * 0.045 * humanAmount;
+          note.volume = Math.max(10, Math.min(118, Math.round(note.volume * sustain)));
         }
 
         if (note.volume != null) {
@@ -1554,6 +1576,7 @@ export function deskAudioParams(meta) {
         tone: ctx?.tone ?? meta.tone,
         humanize: ctx?.humanize ?? meta.humanize,
         players: ctx?.players ?? meta.players,
+        expressionExpansion: ctx?.expressionExpansion ?? false,
         experimentalPerformance: ctx?.experimentalPerformance ?? false,
       }),
   };

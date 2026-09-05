@@ -89,7 +89,12 @@ export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
   };
 }
 
-export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
+export function createTestingPlayer({
+  abcjs,
+  audioSelector,
+  cursorControl,
+  majorExpansion = false,
+}) {
   let loaded = false;
   let visualObj = null;
   let timers = [];
@@ -129,7 +134,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     setTune(nextVisualObj, audioParams) {
       invalidate();
       visualObj = nextVisualObj;
-      currentAudioParams = amplifyExperimentalHuman(audioParams);
+      currentAudioParams = amplifyExperimentalHuman(audioParams, majorExpansion);
       const bpm = Number(visualObj.getBpm?.());
       secondsPerWholeNote = Number.isFinite(bpm) && bpm > 0 ? 240 / bpm : 2;
       const sequence = visualObj.setUpAudio(currentAudioParams);
@@ -163,7 +168,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
 
     async createWav(nextVisualObj, audioParams) {
       const wavSynth = new abcjs.synth.CreateSynth();
-      const options = amplifyExperimentalHuman(audioParams);
+      const options = amplifyExperimentalHuman(audioParams, majorExpansion);
       try {
         await wavSynth.init({ visualObj: nextVisualObj, options });
         await wavSynth.prime();
@@ -455,7 +460,7 @@ function eventEnd(event) {
   return (Number(event.start) || 0) + eventDuration(event);
 }
 
-function amplifyExperimentalHuman(audioParams) {
+function amplifyExperimentalHuman(audioParams, majorExpansion = false) {
   const amount = Number(audioParams?.callbackContext?.humanize?.amount);
   if (!Number.isFinite(amount) || amount <= 0) return audioParams;
 
@@ -464,6 +469,7 @@ function amplifyExperimentalHuman(audioParams) {
     callbackContext: {
       ...audioParams.callbackContext,
       experimentalPerformance: true,
+      expressionExpansion: majorExpansion,
       humanize: {
         ...audioParams.callbackContext.humanize,
         // The experiment is deliberately expressive: Human remains the master

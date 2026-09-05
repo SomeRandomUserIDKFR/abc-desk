@@ -540,7 +540,8 @@ function initSynth() {
         abcjs,
         audioSelector: "#audio",
         cursorControl: new CursorControl(true),
-      })
+      majorExpansion: testingFramework,
+    })
     : createDeskPlayer({
         abcjs,
         audioSelector: "#audio",
