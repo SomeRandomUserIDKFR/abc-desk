@@ -102,6 +102,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
   let currentAudioParams = null;
   let synth = null;
   let roomBus = null;
+  let secondsPerWholeNote = 2;
 
   return {
     supportsAudio: true,
@@ -131,6 +132,8 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
       invalidate();
       visualObj = nextVisualObj;
       currentAudioParams = amplifyExperimentalHuman(audioParams);
+      const bpm = Number(visualObj.getBpm?.());
+      secondsPerWholeNote = Number.isFinite(bpm) && bpm > 0 ? 240 / bpm : 2;
       const sequence = visualObj.setUpAudio(currentAudioParams);
       const tracks = sequence?.tracks ?? [];
       for (const track of tracks) {
@@ -178,7 +181,10 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     );
     cursorControl.onStart();
     for (const event of events) {
-      const delay = Math.max(0, Math.round((Number(event.start) || 0) * 1000));
+      const delay = Math.max(
+        0,
+        Math.round((Number(event.start) || 0) * secondsPerWholeNote * 1000),
+      );
       timers.push(window.setTimeout(() => cursorControl.onEvent({
         elements: event.elements || event.elts || [],
         left: 0,
@@ -190,7 +196,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     timers.push(window.setTimeout(() => {
       cursorControl.onFinished();
       paused = true;
-    }, Math.round(end * 1000) + 20));
+    }, Math.round(end * secondsPerWholeNote * 1000) + 20));
   }
 
   function pause() {
