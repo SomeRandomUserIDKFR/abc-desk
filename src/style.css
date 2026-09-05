@@ -354,6 +354,111 @@ button.primary:hover {
   fill: rgba(232, 196, 104, 0.35);
 }
 
+.performance-timeline {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--panel-edge);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.timeline-header,
+.timeline-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.timeline-header {
+  justify-content: space-between;
+  font-family: var(--font-mono);
+}
+
+.timeline-track {
+  position: relative;
+  height: 2.25rem;
+  overflow: hidden;
+  border-radius: 5px;
+  background:
+    linear-gradient(90deg, transparent 24.8%, rgba(255, 255, 255, 0.08) 25%, transparent 25.2%),
+    linear-gradient(90deg, transparent 49.8%, rgba(255, 255, 255, 0.08) 50%, transparent 50.2%),
+    linear-gradient(90deg, transparent 74.8%, rgba(255, 255, 255, 0.08) 75%, transparent 75.2%),
+    rgba(4, 14, 16, 0.7);
+}
+
+.timeline-layer {
+  position: absolute;
+  inset: 0;
+}
+
+.timeline-segment {
+  position: absolute;
+  display: block;
+  min-width: 2px;
+  border-radius: 2px;
+}
+
+.timeline-phrases .timeline-segment {
+  top: 0.25rem;
+  height: 0.55rem;
+  background: var(--accent-soft);
+  opacity: 0.7;
+}
+
+.timeline-expression .timeline-segment {
+  top: 1.05rem;
+  height: 0.35rem;
+  background: var(--accent);
+  opacity: 0.8;
+}
+
+.timeline-tempo .timeline-segment {
+  top: 1.65rem;
+  height: 0.3rem;
+  background: #d98a78;
+  opacity: 0.85;
+}
+
+.timeline-playhead {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 2px;
+  background: var(--paper);
+  box-shadow: 0 0 8px rgba(244, 247, 246, 0.8);
+  transition: left 0.08s linear;
+}
+
+.timeline-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.timeline-key i {
+  width: 0.55rem;
+  height: 0.35rem;
+  border-radius: 2px;
+  background: var(--accent-soft);
+}
+
+.timeline-key i.expression {
+  background: var(--accent);
+}
+
+.timeline-key i.tempo {
+  background: #d98a78;
+}
+
+.timeline-tone {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
 @media (max-width: 900px) {
   .workspace {
     grid-template-columns: 1fr;

@@ -97,6 +97,12 @@ graph: rustic-to-warm-to-emotional tone changes, a sorrowful counterline,
 slurs, hairpin dynamics, rests, concert acoustics, and four independent
 players.
 
+The experimental route also shows a live **Performance map** beneath the
+playback controls. Phrase spans, expression curves, and phrase-breath tempo
+shaping are shown as separate layers, with the playhead following the audible
+performance. Experimental phrasing now applies a small, deterministic
+ritardando toward phrase endings in addition to the existing dynamic arcs.
+
 The experimental player now converts abcjs audio output into an ABC Desk-owned
 performance event model before scheduling and highlighting. This keeps abcjs
 as the parser/soundfont provider while allowing timing, expression, players,

@@ -1204,6 +1204,37 @@ export function balanceHeldNotes(tracks, ctx = {}) {
         }
 
       }
+      applyPhraseTempo(notes, phraseProfile, humanAmount);
+    }
+  }
+  function applyPhraseTempo(notes, phraseProfile, humanAmount) {
+    const depth = phraseProfile.tempoDepth * Math.min(1, humanAmount);
+    if (depth <= 0.001) return;
+
+    let phraseStart = 0;
+    for (let index = 1; index <= notes.length; index++) {
+      const previous = notes[index - 1];
+      const current = notes[index];
+      const gap = current ? Math.max(0, current.start - previous.end) : Infinity;
+      const leap = current ? Math.abs(Number(current.pitch) - Number(previous.pitch)) : 0;
+      if (current && gap <= phraseProfile.gapThreshold && leap < phraseProfile.leapThreshold) {
+        continue;
+      }
+
+      const phrase = notes.slice(phraseStart, index);
+      const start = phrase[0]?.start;
+      const end = Math.max(...phrase.map((note) => note.end));
+      const span = Math.max(0.001, end - start);
+      for (const note of phrase) {
+        const originalStart = note.start;
+        const originalEnd = note.end;
+        const startT = Math.max(0, Math.min(1, (originalStart - start) / span));
+        const endT = Math.max(startT, Math.min(1, (originalEnd - start) / span));
+        const warp = (t) => (t + depth * t * t) / (1 + depth);
+        note.start = start + warp(startT) * span;
+        note.end = Math.max(note.start + 0.01, start + warp(endT) * span);
+      }
+      phraseStart = index;
     }
   }
   function createPlayerPhraseProfile(playerCount, trackIndex) {
@@ -1219,6 +1250,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       breathRate: 0.48 + stableUnitNoise(`${seed}:breath-rate`) * 0.22,
       breathPhase: stableUnitNoise(`${seed}:breath-phase`) * Math.PI * 2,
       timingBreath: stableSignedNoise(`${seed}:timing`) * 0.0012,
+      tempoDepth: 0.025 + stableUnitNoise(`${seed}:tempo`) * 0.025,
       sustainRate: 0.55 + stableUnitNoise(`${seed}:sustain`) * 0.34,
       sustainDepth: 0.025 + stableUnitNoise(`${seed}:sustain-depth`) * 0.035,
       bowOffset: Math.floor(stableUnitNoise(`${seed}:bow`) * 2),

@@ -75,17 +75,28 @@ export function buildPerformanceGraph(tracks, context = {}) {
     startChar: change.at,
     tone: change.tone.name,
   }));
+  const tempo = context.experimentalPerformance
+    ? phrases.map((phrase) => ({
+        type: "tempo",
+        start: phrase.start,
+        end: phrase.end,
+        curve: "phrase-breath",
+        amount: 0.06,
+      }))
+    : [];
   return {
     events: [
       ...notes,
       ...expression,
       ...tone,
       ...room,
+      ...tempo,
     ],
     phrases,
     expression,
     tone,
     room,
+    tempo,
     player: {
       count: Math.max(1, Number(context.players) || 1),
       metadata: tracks.map((_, trackIndex) => ({

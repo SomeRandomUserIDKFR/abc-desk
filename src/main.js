@@ -218,6 +218,16 @@ app.innerHTML = `
           ? `<div id="testing-panel" class="lint-panel" aria-label="Player experiment">
               <div class="lint-header"><h2 class="panel-title">Player experiment</h2><span class="lint-count">${testingFramework ? "#testingframework" : "default"}</span></div>
               <p id="testing-metrics" class="lint-empty">Render a tune to inspect normalized playback events.</p>
+              <div id="performance-timeline" class="performance-timeline" aria-label="Performance timeline" hidden>
+                <div class="timeline-header"><span>Performance map</span><span id="timeline-time">0.0s</span></div>
+                <div class="timeline-track">
+                  <div id="timeline-phrases" class="timeline-layer timeline-phrases"></div>
+                  <div id="timeline-expression" class="timeline-layer timeline-expression"></div>
+                  <div id="timeline-tempo" class="timeline-layer timeline-tempo"></div>
+                  <div id="timeline-playhead" class="timeline-playhead"></div>
+                </div>
+                <div id="timeline-legend" class="timeline-legend"></div>
+              </div>
             </div>`
           : ""
       }
@@ -263,6 +273,13 @@ const downloadPdfBtn = document.querySelector("#download-pdf");
 const downloadPngBtn = document.querySelector("#download-png");
 const downloadJpegBtn = document.querySelector("#download-jpeg");
 const testingMetrics = document.querySelector("#testing-metrics");
+const performanceTimeline = document.querySelector("#performance-timeline");
+const timelinePhrases = document.querySelector("#timeline-phrases");
+const timelineExpression = document.querySelector("#timeline-expression");
+const timelineTempo = document.querySelector("#timeline-tempo");
+const timelinePlayhead = document.querySelector("#timeline-playhead");
+const timelineLegend = document.querySelector("#timeline-legend");
+const timelineTime = document.querySelector("#timeline-time");
 const supportsAudio = abcjs.synth.supportsAudio();
 
 editor.value = DEFAULT_ABC;
@@ -583,6 +600,7 @@ function initSynth() {
         audioSelector: "#audio",
         cursorControl: new CursorControl(true),
       majorExpansion: testingFramework,
+      onPerformanceEvent: ({ seconds }) => updateTimelinePlayhead(seconds),
     })
     : createDeskPlayer({
         abcjs,
@@ -731,6 +749,67 @@ function updateTestingMetrics() {
   testingMetrics.textContent = metrics
     ? `${player.backendName}: ${metrics.tracks} tracks · ${metrics.notes} notes · ${metrics.events} events · ${metrics.duration}s · ${metrics.phrases} phrases · ${metrics.expressionEvents} curves · ${metrics.toneEvents} tone changes · ${metrics.players} players`
     : "Load playback to inspect normalized playback events.";
+  renderPerformanceTimeline(metrics);
+}
+
+function updateTimelinePlayhead(seconds) {
+  if (!performanceTimeline || !timelinePlayhead) return;
+  const duration = Number(player?.getDiagnostics()?.duration) || 0;
+  const position = duration > 0 ? Math.max(0, Math.min(100, (seconds / duration) * 100)) : 0;
+  timelinePlayhead.style.left = `${position}%`;
+  if (timelineTime) timelineTime.textContent = `${Math.max(0, seconds).toFixed(1)}s`;
+}
+
+function renderPerformanceTimeline(metrics) {
+  if (!performanceTimeline) return;
+  const graph = metrics?.performance;
+  const duration = Number(metrics?.duration) || 0;
+  if (!graph || duration <= 0) {
+    performanceTimeline.hidden = true;
+    return;
+  }
+
+  const addRange = (parent, item, className) => {
+    const start = Math.max(0, Number(item.start) || 0);
+    const end = Math.max(start, Number(item.end) || start);
+    const segment = document.createElement("span");
+    segment.className = `timeline-segment ${className}`;
+    segment.style.left = `${(start / duration) * 100}%`;
+    segment.style.width = `${Math.max(0.8, ((end - start) / duration) * 100)}%`;
+    segment.title = `${item.type ?? className}: ${start.toFixed(2)}–${end.toFixed(2)}s`;
+    parent.appendChild(segment);
+  };
+
+  timelinePhrases.innerHTML = "";
+  timelineExpression.innerHTML = "";
+  timelineTempo.innerHTML = "";
+  for (const phrase of graph.phrases ?? []) addRange(timelinePhrases, phrase, "phrase");
+  for (const curve of graph.expression ?? []) addRange(timelineExpression, curve, "expression");
+  for (const curve of graph.tempo ?? []) addRange(timelineTempo, curve, "tempo");
+
+  timelineLegend.innerHTML = "";
+  const labels = [
+    ["phrase", "phrases"],
+    ["expression", "expression"],
+    ["tempo", "breath tempo"],
+  ];
+  for (const [className, label] of labels) {
+    const item = document.createElement("span");
+    item.className = "timeline-key";
+    item.innerHTML = `<i class="${className}"></i>`;
+    item.append(document.createTextNode(label));
+    timelineLegend.appendChild(item);
+  }
+  for (const [index, tone] of (graph.tone ?? []).entries()) {
+    const marker = document.createElement("span");
+    marker.className = "timeline-tone";
+    marker.style.left = `${((index + 1) / ((graph.tone?.length ?? 0) + 1)) * 100}%`;
+    marker.title = `Tone: ${tone.tone}`;
+    marker.textContent = tone.tone;
+    timelineLegend.appendChild(marker);
+  }
+  performanceTimeline.hidden = false;
+  updateTimelinePlayhead(0);
 }
 
 audioEl.addEventListener("click", (event) => {

@@ -96,6 +96,7 @@ export function createTestingPlayer({
   audioSelector,
   cursorControl,
   majorExpansion = false,
+  onPerformanceEvent = null,
 }) {
   let loaded = false;
   let visualObj = null;
@@ -232,6 +233,13 @@ export function createTestingPlayer({
         top: 0,
         height: 0,
       }), delay));
+      timers.push(window.setTimeout(() => {
+        onPerformanceEvent?.({
+          event,
+          seconds: eventSeconds,
+          duration: eventDuration(event) * secondsPerWholeNote,
+        });
+      }, delay));
     }
     const end = Math.max(...events.map(eventEnd), 0);
     timers.push(window.setTimeout(() => {
@@ -614,7 +622,16 @@ function summarizeEvents(tracks, counts = {}, graph = null) {
     phrases: graph?.phrases.length ?? 0,
     expressionEvents: graph?.expression.length ?? 0,
     toneEvents: graph?.tone.length ?? 0,
+    tempoEvents: graph?.tempo.length ?? 0,
     roomEvents: graph?.room.length ?? 0,
     players: graph?.player.count ?? 1,
+    performance: graph
+      ? {
+          phrases: graph.phrases,
+          expression: graph.expression,
+          tone: graph.tone,
+          tempo: graph.tempo,
+        }
+      : null,
   };
 }
