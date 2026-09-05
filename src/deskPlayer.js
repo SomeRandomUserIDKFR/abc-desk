@@ -227,14 +227,6 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     timers = [];
   }
 
-  function eventDuration(event) {
-    return Math.max(0.04, Number(event.duration) || ((Number(event.end) || 0) - (Number(event.start) || 0)));
-  }
-
-  function eventEnd(event) {
-    return (Number(event.start) || 0) + eventDuration(event);
-  }
-
   function attachVisualElements(noteEvents, tune) {
     const selectables = tune.getSelectableArray?.() ?? [];
     for (const event of noteEvents) {
@@ -341,6 +333,18 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     roomBus = { input };
   }
 
+}
+
+function eventDuration(event) {
+  return Math.max(
+    0.04,
+    Number(event.duration) ||
+      ((Number(event.end) || 0) - (Number(event.start) || 0)),
+  );
+}
+
+function eventEnd(event) {
+  return (Number(event.start) || 0) + eventDuration(event);
 }
 
 function amplifyExperimentalHuman(audioParams) {
