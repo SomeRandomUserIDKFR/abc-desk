@@ -637,8 +637,13 @@ function renderScore() {
 
     if (player?.loaded && lastVisualObj) {
       const audioParams = deskAudioParams(prepared.meta);
-      player.setTune(lastVisualObj, audioParams);
-      updateTestingMetrics();
+      try {
+        player.setTune(lastVisualObj, audioParams);
+        updateTestingMetrics();
+      } catch (error) {
+        updateTestingMetrics();
+        setStatus(`${base} — Audio setup failed: ${error.message ?? error}`, true);
+      }
     }
     updateDownloadButtons();
   } catch (err) {

@@ -1,5 +1,3 @@
-import { balanceHeldNotes } from "./deskDialect.js";
-
 /**
  * ABC Desk's player boundary.
  *
@@ -141,7 +139,6 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
           }
         }
       }
-      balanceHeldNotes(tracks, audioParams?.callbackContext ?? {});
       events = tracks.flat().filter((event) => event.cmd === "note");
       diagnostics = summarizeEvents(sequence?.tracks ?? []);
       paused = false;
