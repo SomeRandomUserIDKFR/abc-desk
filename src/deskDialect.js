@@ -951,10 +951,10 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       } else {
         factor *= (profile.shortBoost ?? 1) * (noteToneMix.shortBoost ?? 1) * (noteToneMix.attack ?? 1);
       }
-      if (isViolinInstrument(note.instrument) && noteToneMix.attack && noteToneMix.attack > 1.5) {
+      if (family === "strings" && noteToneMix.attack && noteToneMix.attack > 1.5) {
         factor *= 1.24;
       }
-      if (isViolinInstrument(note.instrument) && noteToneMix.articulation) {
+      if (family === "strings" && noteToneMix.articulation) {
         factor *= Math.min(1.7, 1 + noteToneMix.articulation * 0.18);
       }
       if (profile.highCut && note.pitch >= profile.highCut) {
@@ -963,7 +963,6 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       if (family === "brass" && note.pitch != null && note.pitch <= 50) {
         factor *= 1.03;
       }
-      factor *= stringRegisterColor(note.instrument, note.pitch);
       const volumeCap = (noteToneMix.attack ?? 1) > 1.5 ? 108 : 118;
       note.volume = Math.max(12, Math.min(volumeCap, Math.round(note.volume * factor)));
     }
@@ -1049,9 +1048,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       const family = instrumentFamily(note.instrument);
       const simultaneousCount = sameStartBuckets.get(Math.round(note.start * 64))?.length ?? 1;
       const denseChordFactor = simultaneousCount >= 4 ? 0.48 : simultaneousCount >= 3 ? 0.72 : 1;
-      const shortBase = isViolinInstrument(note.instrument)
-        ? 1.9
-        : family === "woodwind"
+      const shortBase = family === "woodwind"
         ? 1.18
         : family === "strings"
         ? 1.2
@@ -1060,14 +1057,14 @@ export function balanceHeldNotes(tracks, ctx = {}) {
         : family === "bass"
         ? 1.08
         : 1.18;
-      const articulationBoost = isViolinInstrument(note.instrument)
+      const articulationBoost = family === "strings"
         ? (toneMix.articulation ?? 1) * 0.6
         : 0;
-      const attackBoost = isViolinInstrument(note.instrument) ? (toneMix.attack ?? 1) * 0.25 : 0;
+      const attackBoost = family === "strings" ? (toneMix.attack ?? 1) * 0.25 : 0;
       const shortFactor =
         (shortBase + articulationBoost * 0.4 + attackBoost) * denseChordFactor;
       let volume = Math.max(14, Math.round(note.volume * shortFactor));
-      if (isViolinInstrument(note.instrument) && dur <= 0.25) {
+      if (family === "strings" && dur <= 0.25) {
         const aggressiveTransient = simultaneousCount >= 4 ? 0.25 : 1;
         volume = Math.max(
           16,
@@ -1583,17 +1580,6 @@ function adaptiveStringInstrument(pitch) {
   if (midi >= 62) return "viola";
   if (midi >= 48) return "cello";
   return "contrabass";
-}
-
-function stringRegisterColor(instrument, pitch) {
-  const name = normalizeInstrumentName(instrument);
-  const midi = Number(pitch);
-  if (!Number.isFinite(midi)) return 1;
-  if (name === "violin") return midi >= 76 ? 1.06 : midi < 62 ? 0.96 : 1;
-  if (name === "viola") return midi < 55 ? 1.04 : midi >= 69 ? 1.02 : 1;
-  if (name === "cello") return midi < 48 ? 1.08 : midi >= 69 ? 1.04 : 1;
-  if (name === "contrabass") return midi < 43 ? 1.1 : 1.03;
-  return 1;
 }
 
 function isBowedStringInstrument(instrument) {
