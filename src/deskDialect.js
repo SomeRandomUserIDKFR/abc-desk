@@ -5,9 +5,9 @@ import abcjs from "abcjs";
  * Compiles to meta + clean ABC for abcjs.
  */
 
-const FRIENDLY_RE = /^(Inst|Tone|Human|Imperfect)\s*:\s*(.*)$/i;
+const FRIENDLY_RE = /^(Inst|Tone|Human|Imperfect|Room)\s*:\s*(.*)$/i;
 const ENCODED_RE =
-  /^(?:%%|I:)\s*desk-(instrument|tone|human|imperfect)\s+(.+)$/i;
+  /^(?:%%|I:)\s*desk-(instrument|tone|human|imperfect|room)\s+(.+)$/i;
 const UNKNOWN_DESK_RE = /^(?:%%|I:)\s*desk-([a-z0-9-]+)\b/i;
 const MIDI_PROGRAM_LINE_RE = /^%%\s*MIDI\s+program\b(.*)$/i;
 const DRUM_FRIENDLY_RE = /^(Drum1|Drum2)\s*:\s*(.*)$/i;
@@ -336,6 +336,14 @@ export const TONES = {
   },
 };
 
+export const ROOMS = {
+  dry: { label: "Dry", decay: 0.15, mix: 0 },
+  studio: { label: "Studio", decay: 0.35, mix: 0.08 },
+  chamber: { label: "Chamber", decay: 0.8, mix: 0.14 },
+  concert: { label: "Concert Hall", decay: 1.7, mix: 0.2 },
+  cathedral: { label: "Cathedral", decay: 3.2, mix: 0.28 },
+};
+
 const TONE_ALIASES = {
   agressive: "aggressive",
 };
@@ -381,6 +389,13 @@ export function resolveTone(raw) {
   const hit = TONES[normalized];
   if (!hit) return null;
   return { ...hit, name: normalized };
+}
+
+export function resolveRoom(raw) {
+  if (!raw) return null;
+  const key = raw.trim().toLowerCase().replace(/\s+/g, "-");
+  const hit = ROOMS[key];
+  return hit ? { ...hit, name: key } : null;
 }
 
 /**
@@ -562,6 +577,7 @@ export function parseDeskHeaders(source) {
   let instrumentRaw = null;
   let toneRaw = null;
   let humanRaw = null;
+  let roomRaw = null;
   let drum1Raw = null;
   let drum2Raw = null;
   /** @type {number | null} */
@@ -580,7 +596,8 @@ export function parseDeskHeaders(source) {
       const value = friendly[2].trim();
       if (kind === "inst") instrumentRaw = value;
       else if (kind === "tone") toneRaw = value;
-      else humanRaw = value;
+      else if (kind === "human" || kind === "imperfect") humanRaw = value;
+      else roomRaw = value;
       continue;
     }
 
@@ -590,7 +607,8 @@ export function parseDeskHeaders(source) {
       const value = encoded[2].trim();
       if (kind === "instrument") instrumentRaw = value;
       else if (kind === "tone") toneRaw = value;
-      else humanRaw = value;
+      else if (kind === "human" || kind === "imperfect") humanRaw = value;
+      else roomRaw = value;
       continue;
     }
 
@@ -655,6 +673,7 @@ export function parseDeskHeaders(source) {
   const fromInst = resolveInstrument(instrumentRaw);
   const tone = resolveTone(toneRaw);
   const humanize = resolveHumanization(humanRaw);
+  const room = resolveRoom(roomRaw);
   const drum1 = drum1Raw ? (resolveDrumSound(drum1Raw) ?? DEFAULT_DRUM_1) : undefined;
   const drum2 = drum2Raw ? (resolveDrumSound(drum2Raw) ?? DEFAULT_DRUM_2) : undefined;
   const hasMultipleMidiPrograms =
@@ -668,6 +687,9 @@ export function parseDeskHeaders(source) {
   }
   if (humanRaw && !humanize) {
     warnings.push(`Unknown Human/Imperfect amount: “${humanRaw}” (try 0.35, 0.6, on, or off)`);
+  }
+  if (roomRaw && !room) {
+    warnings.push(`Unknown Room: “${roomRaw}” (try dry, studio, chamber, concert, or cathedral)`);
   }
   if (drum1Raw && !resolveDrumSound(drum1Raw)) {
     warnings.push(`Unknown Drum1: “${drum1Raw}” (try acoustic-snare, bass-drum-1, closed-hi-hat, or a MIDI drum number 35-81)`);
@@ -716,6 +738,8 @@ export function parseDeskHeaders(source) {
       instrumentRaw,
       toneRaw,
       humanRaw,
+      room,
+      roomRaw,
       midiProgram: midiProgram ?? undefined,
       hasMultipleMidiPrograms,
       instrumentSource:
@@ -1396,7 +1420,7 @@ export function programToSoundfontName(program) {
  * Synth options derived from Desk meta.
  * Instrument comes from %%MIDI program in the ABC (Inst: compiles to that).
  * Do not pass options.program — it fights / shadows the standard directive.
- * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, midiProgram?: number, hasMultipleMidiPrograms?: boolean }} meta
+ * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, room?: ReturnType<typeof resolveRoom>, midiProgram?: number, hasMultipleMidiPrograms?: boolean }} meta
  */
 export function deskAudioParams(meta) {
   const program = meta.hasMultipleMidiPrograms
@@ -1415,6 +1439,7 @@ export function deskAudioParams(meta) {
       drum2: meta.drum2,
       tone: meta.tone,
       humanize: meta.humanize,
+      room: meta.room,
     },
     pan,
     sequenceCallback: (tracks, ctx) =>
@@ -1466,6 +1491,9 @@ export function deskStatusFragment(meta) {
   }
   if (meta.tone) {
     parts.push(`Tone ${meta.tone.label}`);
+  }
+  if (meta.room) {
+    parts.push(`Room ${meta.room.label}`);
   }
   if (meta.humanize?.amount) {
     parts.push(meta.humanize.label);

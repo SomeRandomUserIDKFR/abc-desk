@@ -44,6 +44,7 @@ Friendly and encoded forms are equivalent (last wins):
 Inst: flute
 Tone: warm
 Human: 0.45
+Room: concert
 ```
 
 ```
@@ -71,6 +72,7 @@ Put `%%MIDI program` **before** `K:` (in the header). After `K:` / mid-body it c
 
 - **Inst: / %%MIDI program** — GM instrument for playback (`flute`, `violin`, `atmosphere`, or `0`–`127`)
 - **Tone:** playback character — `neutral`, `warm`, `bright`, `soft`, `rustic`, `upbeat`, `sorrow`, `emotional`, `aggressive`, `swing`
+- **Room:** experimental Web Audio reverb — `dry`, `studio`, `chamber`, `concert`, `cathedral` (active in `#testingframework`)
 - **Human: / Imperfect:** optional stacking humanization amount from `0` to `1` (`Human: 0.35`, `Imperfect: 0.7`, `%%desk-human 0.45`). The value is internally doubled and capped at full strength, so `0.5` is approximately the former maximum. It adds repeatable rubato, sound/volume variation, violin and bowed-string pressure/release imperfections, and slight cents drift for tunable instruments such as strings, woodwinds, brass, and bass. The intensity gently breathes over phrases instead of staying perfectly flat, and crescendo/diminuendo ramps receive small non-linear dynamic deviations. `0.1`–`0.2` is subtle; `0.2`–`0.35` is more expressive.
 - **Drum1: / Drum2:** drum sounds for `o` / `p` note-attached hits (also `!o!` / `!p!`; `acoustic-snare`, `bass-drum-1`, `closed-hi-hat`, or `35`–`81`)
 

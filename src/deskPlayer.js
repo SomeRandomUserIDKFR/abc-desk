@@ -101,6 +101,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
   let paused = false;
   let currentAudioParams = null;
   let synth = null;
+  let roomBus = null;
 
   return {
     supportsAudio: true,
@@ -168,6 +169,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     await synth.init({ visualObj, options: currentAudioParams });
     await synth.prime();
     synth.start();
+    connectRoom(synth, currentAudioParams?.callbackContext?.room);
     cursorControl.onStart();
     for (const event of events) {
       const delay = Math.max(0, Math.round((Number(event.start) || 0) * 1000));
@@ -189,6 +191,8 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     paused = true;
     clearTimers();
     synth?.stop();
+    roomBus?.input.disconnect();
+    roomBus = null;
   }
 
   function reset() {
@@ -200,6 +204,8 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
   function invalidate() {
     clearTimers();
     synth?.stop();
+    roomBus?.input.disconnect();
+    roomBus = null;
     synth = null;
     cursorControl.onFinished();
     paused = false;
@@ -216,6 +222,33 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
 
   function eventEnd(event) {
     return (Number(event.start) || 0) + eventDuration(event);
+  }
+
+  function connectRoom(nextSynth, room) {
+    if (!room || room.mix <= 0 || !nextSynth.directSource?.length) return;
+    const context = nextSynth.directSource[0].context;
+    const input = context.createGain();
+    const dry = context.createGain();
+    const wet = context.createGain();
+    const convolver = context.createConvolver();
+    const length = Math.max(1, Math.ceil(context.sampleRate * room.decay));
+    const impulse = context.createBuffer(2, length, context.sampleRate);
+    for (let channel = 0; channel < impulse.numberOfChannels; channel++) {
+      const data = impulse.getChannelData(channel);
+      for (let index = 0; index < length; index++) {
+        data[index] = (Math.random() * 2 - 1) * Math.pow(1 - index / length, 2.5);
+      }
+    }
+    convolver.buffer = impulse;
+    dry.gain.value = 1 - room.mix;
+    wet.gain.value = room.mix;
+    input.connect(dry).connect(context.destination);
+    input.connect(convolver).connect(wet).connect(context.destination);
+    for (const source of nextSynth.directSource) {
+      source.disconnect();
+      source.connect(input);
+    }
+    roomBus = { input };
   }
 
 }
