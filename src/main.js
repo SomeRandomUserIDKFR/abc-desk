@@ -11,6 +11,7 @@ import {
 import { parseParts } from "./deskParts.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
+import { createDeskPlayer } from "./deskPlayer.js";
 import songTxt from "../Song.txt?raw";
 
 const SAMPLES = {
@@ -214,7 +215,7 @@ if (shared) {
   sampleSelect.value = "";
 }
 
-let synthControl = null;
+let player = null;
 let renderTimer = null;
 let lastVisualObj = null;
 let lastPrepared = null;
@@ -506,7 +507,12 @@ function renderLint(issues) {
 }
 
 function initSynth() {
-  if (!abcjs.synth.supportsAudio()) {
+  player = createDeskPlayer({
+    abcjs,
+    audioSelector: "#audio",
+    cursorControl: new CursorControl(),
+  });
+  if (!player.supportsAudio) {
     audioEl.innerHTML =
       '<p style="margin:0;color:var(--muted);font-size:0.85rem">Audio playback is not supported in this browser.</p>';
     updateDownloadButtons();
@@ -518,44 +524,7 @@ function initSynth() {
 }
 
 function enableSynth() {
-  if (synthControl || !supportsAudio) return;
-  synthControl = new abcjs.synth.SynthController();
-  synthControl.load("#audio", new CursorControl(), {
-    displayLoop: true,
-    displayRestart: true,
-    displayPlay: true,
-    displayProgress: true,
-    displayWarp: true,
-  });
-}
-
-function invalidateSynthAudio() {
-  if (!synthControl) return;
-  try {
-    if (typeof synthControl.pause === "function") synthControl.pause();
-  } catch {
-    /* ignore */
-  }
-  if (synthControl.timer) {
-    try {
-      synthControl.timer.reset();
-      synthControl.timer.stop();
-    } catch {
-      /* ignore */
-    }
-    synthControl.timer = null;
-  }
-  if (synthControl.midiBuffer) {
-    try {
-      synthControl.midiBuffer.stop();
-    } catch {
-      /* ignore */
-    }
-    synthControl.midiBuffer = null;
-  }
-  synthControl.isLoaded = false;
-  synthControl.isLoading = false;
-  synthControl.isStarted = false;
+  player?.load();
 }
 
 /**
@@ -591,10 +560,10 @@ function renderScore() {
     paper.innerHTML = "";
     lastVisualObj = null;
     lastPrepared = null;
-    invalidateSynthAudio();
+    player?.invalidate();
     renderLint([]);
     setStatus("Enter ABC notation to render a score.");
-    if (synthControl) synthControl.disable(true);
+    player?.disable(true);
     updateDownloadButtons();
     return;
   }
@@ -650,13 +619,9 @@ function renderScore() {
       setStatus(base);
     }
 
-    if (synthControl && lastVisualObj) {
+    if (player?.loaded && lastVisualObj) {
       const audioParams = deskAudioParams(prepared.meta);
-      synthControl.setTune(lastVisualObj, false, audioParams);
-      invalidateSynthAudio();
-      synthControl.visualObj = lastVisualObj;
-      synthControl.options = audioParams;
-      synthControl.disable(false);
+      player.setTune(lastVisualObj, audioParams);
     }
     updateDownloadButtons();
   } catch (err) {
@@ -682,10 +647,9 @@ audioEl.addEventListener("click", (event) => {
     return;
   }
   enableSynth();
-  if (synthControl && lastVisualObj && lastPrepared) {
+  if (player?.loaded && lastVisualObj && lastPrepared) {
     const audioParams = deskAudioParams(lastPrepared.meta);
-    synthControl.setTune(lastVisualObj, false, audioParams);
-    synthControl.disable(false);
+    player.setTune(lastVisualObj, audioParams);
   }
 });
 
@@ -728,7 +692,7 @@ downloadMidiBtn.addEventListener("click", () => {
 });
 
 downloadWavBtn.addEventListener("click", async () => {
-  let synth = null;
+  let wav = null;
   try {
     if (!supportsAudio) {
       setStatus("WAV download is not supported in this browser.", true);
@@ -739,17 +703,14 @@ downloadWavBtn.addEventListener("click", async () => {
       return;
     }
     const audioParams = deskAudioParams(lastPrepared.meta);
-    synth = new abcjs.synth.CreateSynth();
-    await synth.init({ visualObj: lastVisualObj, options: audioParams });
-    await synth.prime();
-    const synthUrl = synth.download();
-    triggerDownloadFromUrl(synthUrl, `${tuneFileStem()}.wav`);
+    wav = await player.createWav(lastVisualObj, audioParams);
+    triggerDownloadFromUrl(wav.url, `${tuneFileStem()}.wav`);
     setStatus("Downloaded WAV file.");
   } catch (err) {
     setStatus(`Could not download WAV: ${err.message ?? err}`, true);
   } finally {
     try {
-      if (typeof synth?.stop === "function") synth.stop();
+      wav?.stop();
     } catch {
       /* ignore cleanup errors */
     }
