@@ -1087,7 +1087,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       ctx?.players,
       ctx?.expressionExpansion,
     );
-    applyViolinArticulation(tracks, humanAmount);
+    applyBowedStringArticulation(tracks, humanAmount);
     expandEnsembleTracks(tracks, ctx?.players, humanAmount);
   }
   for (const track of tracks) {
@@ -1198,8 +1198,18 @@ export function balanceHeldNotes(tracks, ctx = {}) {
           const vibratoPhase = stableUnitNoise(
             `vibrato:${trackIndex}:${phraseProfile.seed}:${index}:${note.start}:${note.pitch}`,
           );
+          const vibratoRateVariation = stableSignedNoise(
+            `vibrato-rate:${trackIndex}:${phraseProfile.seed}:${index}:${note.start}:${note.pitch}`,
+          );
+          const vibratoDepthVariation = stableSignedNoise(
+            `vibrato-depth:${trackIndex}:${phraseProfile.seed}:${index}:${note.start}:${note.pitch}`,
+          );
+          const bowedString = isBowedStringInstrument(note.instrument);
           const vibratoDepth =
-            Math.min(14, 3 + duration * 2.5) * phraseProfile.vibratoDepth * humanAmount;
+            Math.min(bowedString ? 18 : 14, 3 + duration * 2.5) *
+            phraseProfile.vibratoDepth *
+            (1 + (bowedString ? vibratoDepthVariation * 0.16 : vibratoDepthVariation * 0.08)) *
+            humanAmount;
           // Keep attacks closer to pitch center; sustained notes receive the
           // larger drift that stands in for a delayed vibrato onset.
           const sustainFactor = Math.min(1, 1 - Math.exp(-Math.max(0, duration - 0.18) * 2.4));
@@ -1207,6 +1217,18 @@ export function balanceHeldNotes(tracks, ctx = {}) {
           note.cents =
             (Number(note.cents) || 0) +
             Math.round((vibratoPhase - 0.5) * vibratoDepth * vibratoBuild * 10) / 10;
+          if (bowedString) {
+            // Vary the apparent vibrato rate and bow contact so sustained notes
+            // do not repeat the same perfectly even sampled-sustain motion.
+            note.cents +=
+              Math.sin(index * (0.72 + vibratoRateVariation * 0.12) + phraseProfile.breathPhase) *
+              vibratoDepth *
+              0.16 *
+              vibratoBuild;
+            note.bowContact = Math.round(
+              (0.5 + vibratoDepthVariation * 0.12 + vibratoRateVariation * 0.08) * 100,
+            ) / 100;
+          }
           if (isBowedStringInstrument(note.instrument) && Number(note.pitch) >= 79) {
             const registerFactor = Math.min(1, (Number(note.pitch) - 79) / 24);
             const drift = stableSignedNoise(
@@ -1286,13 +1308,13 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   return tracks;
 }
 
-function applyViolinArticulation(tracks, humanAmount) {
+function applyBowedStringArticulation(tracks, humanAmount) {
   for (const track of tracks) {
     const notes = track
       .filter(
         (event) =>
           event.cmd === "note" &&
-          isViolinInstrument(event.instrument) &&
+          isBowedStringInstrument(event.instrument) &&
           Number.isFinite(Number(event.start)) &&
           Number.isFinite(Number(event.end)),
       )
@@ -1311,8 +1333,11 @@ function applyViolinArticulation(tracks, humanAmount) {
 
       if (slurred) {
         const wideLeap = interval >= 5;
+        const variation = stableSignedNoise(
+          `string-legato:${note.start}:${note.pitch}:${next.pitch}:${note.instrument || ""}`,
+        );
         const overlap = Math.min(wideLeap ? 0.018 : 0.012, step * 0.1) *
-          (0.75 + humanAmount * 0.25);
+          (0.82 + humanAmount * (0.18 + variation * 0.08));
         note.end = Math.max(
           note.start + 0.01,
           Math.min(next.start + overlap, note.end + overlap),
@@ -1322,23 +1347,40 @@ function applyViolinArticulation(tracks, humanAmount) {
           note.cents = (Number(note.cents) || 0) + Math.sign(next.pitch - note.pitch) * 0.8;
         }
         if (note.volume != null) {
-          note.volume = Math.max(12, Math.round(note.volume * (0.96 - humanAmount * 0.035)));
+          note.volume = Math.max(
+            12,
+            Math.round(note.volume * (0.96 - humanAmount * (0.035 - variation * 0.012))),
+          );
         }
         if (next.volume != null) {
-          next.volume = Math.max(12, Math.round(next.volume * (0.985 + humanAmount * 0.02)));
+          next.volume = Math.max(
+            12,
+            Math.round(next.volume * (0.985 + humanAmount * (0.02 + variation * 0.01))),
+          );
         }
       } else {
         const detached = Math.max(0, next.start - note.end);
         const accent = Number(note.volume) >= 96;
+        const variation = stableSignedNoise(
+          `string-detache:${note.start}:${note.pitch}:${next.pitch}:${note.instrument || ""}`,
+        );
         note.articulation = accent ? "accent-detache" : "detache";
         note.end = Math.max(
           note.start + 0.01,
-          note.end - Math.min(0.018, detached * 0.18 + 0.004),
+          note.end - Math.min(0.018, detached * (0.16 + variation * 0.04) + 0.004),
         );
         if (note.volume != null) {
           note.volume = Math.max(
             12,
-            Math.min(118, Math.round(note.volume * (accent ? 1.025 : 0.985))),
+            Math.min(
+              118,
+              Math.round(
+                note.volume *
+                  (accent
+                    ? 1.025 + humanAmount * variation * 0.012
+                    : 0.985 + humanAmount * variation * 0.01),
+              ),
+            ),
           );
         }
       }
@@ -1422,6 +1464,7 @@ function applyHumanization(tracks, humanize) {
       const bowDirection = noteIndex % 2 === 0 ? 1 : -1;
       const bowPressureNoise = stableSignedNoise(`${seedBase}:bow-pressure`);
       const bowReleaseNoise = stableSignedNoise(`${seedBase}:bow-release`);
+      const bowFrictionNoise = stableSignedNoise(`${seedBase}:bow-friction`);
 
       const rubatoWidth =
         family === "strings" ? 0.01 : family === "woodwind" ? 0.008 : family === "brass" ? 0.006 : 0.005;
@@ -1452,6 +1495,11 @@ function applyHumanization(tracks, humanize) {
         if (bowedString) {
           // Alternating bow pressure adds a small attack/release irregularity.
           volumeFactor *= 1 + (bowDirection * 0.045 + bowPressureNoise * 0.06) * amount;
+          note.bowFriction = Math.round(
+            Math.max(-1, Math.min(1, bowFrictionNoise * 0.7 + bowPressureNoise * 0.3)) *
+              amount *
+              100,
+          ) / 100;
           if (mistakeNoise < amount * 0.06) {
             volumeFactor *= 0.9 + stableUnitNoise(`${seedBase}:bow-slip`) * 0.12;
           }
