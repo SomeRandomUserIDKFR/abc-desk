@@ -108,6 +108,10 @@ the same intonation/humanization pipeline, while their soundfont identity,
 register emphasis, attack, and resonance differ. The **Four strings showcase**
 sample demonstrates the adaptive mode across a wide range.
 
+Double bass uses abcjs's native `contrabass` soundfont (program 43), preserving
+a bowed orchestral-bass character. It does not use the plucked `acoustic_bass`
+bank (program 32).
+
 Ensembles now receive perceptual loudness compensation: layered sections scale
 approximately by the inverse square root of player count, preserving width and
 variation without making `Players: 8` overwhelm the solo balance.

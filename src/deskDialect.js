@@ -125,9 +125,9 @@ export const INSTRUMENTS = {
   cello: { program: 42, label: "Cello" },
   chello: { program: 42, label: "Cello" },
   violoncello: { program: 42, label: "Cello" },
-  contrabass: { program: 32, label: "Contrabass", soundfont: "acoustic_bass" },
-  "double bass": { program: 32, label: "Double Bass", soundfont: "acoustic_bass" },
-  "double-bass": { program: 32, label: "Double Bass", soundfont: "acoustic_bass" },
+  contrabass: { program: 43, label: "Contrabass" },
+  "double bass": { program: 43, label: "Double Bass" },
+  "double-bass": { program: 43, label: "Double Bass" },
   harp: { program: 46, label: "Orchestral Harp" },
   timpani: { program: 47, label: "Timpani" },
   string: { program: 48, label: "Adaptive Strings", adaptive: true },
@@ -1581,7 +1581,7 @@ function adaptiveStringInstrument(pitch) {
   if (midi >= 76) return "violin";
   if (midi >= 62) return "viola";
   if (midi >= 48) return "cello";
-  return "acoustic_bass";
+  return "contrabass";
 }
 
 function isBowedStringInstrument(instrument) {
@@ -1817,8 +1817,7 @@ export function deskAudioParams(meta) {
   const program = meta.hasMultipleMidiPrograms
     ? undefined
     : meta.midiProgram ?? meta.instrument?.program;
-  const forceInstrument =
-    meta.instrument?.soundfont ?? programToSoundfontName(program);
+  const forceInstrument = programToSoundfontName(program);
   const pan = spreadVoicePan(meta.sourceText);
 
   const options = {
