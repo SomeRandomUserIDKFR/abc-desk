@@ -109,6 +109,25 @@ L:1/8
 K:C bass
 C,2 E,2 G,2 C2 | G,2 E,2 C,4 | D,2 F,2 A,2 D2 | A,2 F,2 D,4 |`,
 
+  ensembleStress: `X:1
+T:Violin Ensemble Stress Test
+Inst: violin
+Tone: warm
+Human: 0.35
+Room: concert
+Players: 8
+Distance: 0.7
+M:4/4
+L:1/8
+Q:1/4=88
+K:Dm
+V:1 name="Lead"
+(DFGA d2c2 | BAGF E2D2 | (DEFG A2G2 | FEDC D4 |
+!gimplus!d2c2 BAGF | E2F2 G2A2 | d4 c2A2 | G8 |
+V:2 name="Counterpoint"
+z4 A2F2 | G2E2 F2D2 | z4 (ABcd | e2d2 c2A2 |
+F2A2 d2c2 | B2G2 A2F2 | D4 z4 | A,8 |`,
+
   broken: songTxt,
 };
 
@@ -139,6 +158,7 @@ app.innerHTML = `
             <option value="blues">Blues</option>
             <option value="expression">Expression pack</option>
             <option value="ensemble">Ensemble (Part:)</option>
+            <option value="ensembleStress">Ensemble stress test</option>
             <option value="broken">Broken Reflection</option>
           </select>
           <button type="button" id="copy">Copy</button>
