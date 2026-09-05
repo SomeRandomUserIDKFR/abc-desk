@@ -1356,18 +1356,32 @@ function expandEnsembleTracks(tracks, players, humanAmount) {
     for (let trackIndex = 0; trackIndex < originals.length; trackIndex++) {
       const sourceNotes = originals[trackIndex];
       if (!sourceNotes.length) continue;
+      const playerSeed = `ensemble:${playerCount}:${player}:${trackIndex}`;
+      const sectionTiming =
+        stableSignedNoise(`${playerSeed}:section-timing`) * 0.0035 * humanAmount;
+      const sectionPitch =
+        stableSignedNoise(`${playerSeed}:section-pitch`) * 0.8 * humanAmount;
       const layer = sourceNotes.map((source, noteIndex) => {
         const note = { ...source, ensembleReplica: true };
-        const seed = `ensemble:${playerCount}:${player}:${trackIndex}:${noteIndex}:${source.start}:${source.pitch}`;
-        const timing = stableSignedNoise(`${seed}:timing`) * 0.0025 * humanAmount;
-        const gain = 1 + stableSignedNoise(`${seed}:gain`) * 0.045 * humanAmount;
+        const seed = `${playerSeed}:${noteIndex}:${source.start}:${source.pitch}`;
+        const timing =
+          sectionTiming + stableSignedNoise(`${seed}:timing`) * 0.0035 * humanAmount;
+        const gain = 1 + stableSignedNoise(`${seed}:gain`) * 0.07 * humanAmount;
+        const durationFactor =
+          1 + stableSignedNoise(`${seed}:duration`) * 0.012 * humanAmount;
         note.start = Math.max(0, Number(source.start) + timing);
-        note.end = Math.max(note.start + 0.01, Number(source.end) + timing);
+        note.end = Math.max(
+          note.start + 0.01,
+          note.start + (Number(source.end) - Number(source.start)) * durationFactor,
+        );
         if (note.volume != null) {
           note.volume = Math.max(8, Math.min(118, Math.round(note.volume * gain)));
         }
         if (note.cents != null) {
-          note.cents = Number(note.cents) + stableSignedNoise(`${seed}:pitch`) * 2.2 * humanAmount;
+          note.cents =
+            Number(note.cents) +
+            sectionPitch +
+            stableSignedNoise(`${seed}:pitch`) * 3.2 * humanAmount;
         }
         return note;
       });

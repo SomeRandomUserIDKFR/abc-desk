@@ -105,6 +105,12 @@ Ensembles now receive perceptual loudness compensation: layered sections scale
 approximately by the inverse square root of player count, preserving width and
 variation without making `Players: 8` overwhelm the solo balance.
 
+Ensemble replicas also share a small section-level timing and pitch tendency
+while retaining individual deviations. Sources are seated in a narrower
+section cluster and receive tiny tonal differences, which produces a more
+cohesive orchestra-like section instead of many identical voices spread across
+the whole stereo field.
+
 The experimental route also shows a live **Performance map** beneath the
 playback controls. Phrase spans, expression curves, and phrase-breath tempo
 shaping are shown as separate layers, with the playhead following the audible
