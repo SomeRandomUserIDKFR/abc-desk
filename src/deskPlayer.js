@@ -131,8 +131,8 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     setTune(nextVisualObj, audioParams) {
       invalidate();
       visualObj = nextVisualObj;
-      currentAudioParams = audioParams;
-      const sequence = visualObj.setUpAudio(audioParams);
+      currentAudioParams = amplifyExperimentalHuman(audioParams);
+      const sequence = visualObj.setUpAudio(currentAudioParams);
       const tracks = sequence?.tracks ?? [];
       for (const track of tracks) {
         for (const event of track) {
@@ -221,6 +221,24 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
     return (Number(event.start) || 0) + eventDuration(event);
   }
 
+}
+
+function amplifyExperimentalHuman(audioParams) {
+  const amount = Number(audioParams?.callbackContext?.humanize?.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return audioParams;
+
+  return {
+    ...audioParams,
+    callbackContext: {
+      ...audioParams.callbackContext,
+      humanize: {
+        ...audioParams.callbackContext.humanize,
+        // The experiment is deliberately expressive: Human remains the master
+        // control, but moderate values reach the existing humanizer sooner.
+        amount: Math.min(1, amount * 2.5),
+      },
+    },
+  };
 }
 
 function inspectTune(visualObj, audioParams) {
