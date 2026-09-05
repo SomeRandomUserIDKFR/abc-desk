@@ -126,8 +126,11 @@ export const INSTRUMENTS = {
   chello: { program: 42, label: "Cello" },
   violoncello: { program: 42, label: "Cello" },
   contrabass: { program: 43, label: "Contrabass" },
+  "double bass": { program: 43, label: "Double Bass" },
+  "double-bass": { program: 43, label: "Double Bass" },
   harp: { program: 46, label: "Orchestral Harp" },
   timpani: { program: 47, label: "Timpani" },
+  string: { program: 48, label: "Adaptive Strings", adaptive: true },
   strings: { program: 48, label: "String Ensemble" },
   trumpet: { program: 56, label: "Trumpet" },
   trump: { program: 56, label: "Trumpet" },
@@ -230,6 +233,7 @@ const STRING_NAMES = new Set([
   "synth-strings-2",
   "pizzicato-strings",
   "tremolo-strings",
+  "string",
   "strings",
 ]);
 
@@ -774,6 +778,8 @@ export function parseDeskHeaders(source) {
   const instrument =
     hasMultipleMidiPrograms
       ? null
+      : fromInst?.adaptive
+      ? fromInst
       : midiProgram != null
       ? instrumentFromProgram(midiProgram)
       : fromInst;
@@ -903,7 +909,8 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   const MIN_FACTOR = 0.9;
   const forceInst = ctx?.forceInstrument;
 
-  if (forceInst) {
+  const adaptiveStrings = Boolean(ctx?.adaptiveStrings);
+  if (forceInst && !adaptiveStrings) {
     for (const track of tracks) {
       for (const note of track) {
         if (note.pitch != null) note.instrument = forceInst;
@@ -913,6 +920,9 @@ export function balanceHeldNotes(tracks, ctx = {}) {
 
   for (const track of tracks) {
     for (const note of track) {
+      if (adaptiveStrings && note.pitch != null) {
+        note.instrument = adaptiveStringInstrument(note.pitch);
+      }
       clampPitchForSoundfont(note);
     }
   }
@@ -953,6 +963,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       if (family === "brass" && note.pitch != null && note.pitch <= 50) {
         factor *= 1.03;
       }
+      factor *= stringRegisterColor(note.instrument, note.pitch);
       const volumeCap = (noteToneMix.attack ?? 1) > 1.5 ? 108 : 118;
       note.volume = Math.max(12, Math.min(volumeCap, Math.round(note.volume * factor)));
     }
@@ -1566,6 +1577,25 @@ function isViolinInstrument(instrument) {
   return name === "violin" || name === "fiddle";
 }
 
+function adaptiveStringInstrument(pitch) {
+  const midi = Number(pitch);
+  if (midi >= 76) return "violin";
+  if (midi >= 62) return "viola";
+  if (midi >= 48) return "cello";
+  return "contrabass";
+}
+
+function stringRegisterColor(instrument, pitch) {
+  const name = normalizeInstrumentName(instrument);
+  const midi = Number(pitch);
+  if (!Number.isFinite(midi)) return 1;
+  if (name === "violin") return midi >= 76 ? 1.06 : midi < 62 ? 0.96 : 1;
+  if (name === "viola") return midi < 55 ? 1.04 : midi >= 69 ? 1.02 : 1;
+  if (name === "cello") return midi < 48 ? 1.08 : midi >= 69 ? 1.04 : 1;
+  if (name === "contrabass") return midi < 43 ? 1.1 : 1.03;
+  return 1;
+}
+
 function isBowedStringInstrument(instrument) {
   const name = normalizeInstrumentName(instrument);
   if (name.includes("pizzicato")) return false;
@@ -1816,6 +1846,7 @@ export function deskAudioParams(meta) {
       room: meta.room,
       distance: meta.distance,
       players: meta.players,
+      adaptiveStrings: Boolean(meta.instrument?.adaptive),
     },
     pan,
     sequenceCallback: (tracks, ctx) =>
@@ -1828,6 +1859,7 @@ export function deskAudioParams(meta) {
         tone: ctx?.tone ?? meta.tone,
         humanize: ctx?.humanize ?? meta.humanize,
         players: ctx?.players ?? meta.players,
+        adaptiveStrings: ctx?.adaptiveStrings ?? Boolean(meta.instrument?.adaptive),
         expressionExpansion: ctx?.expressionExpansion ?? false,
         experimentalPerformance: ctx?.experimentalPerformance ?? false,
       }),

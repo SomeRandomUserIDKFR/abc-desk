@@ -116,6 +116,20 @@ K:Dm
 !tenuto!d2 !marcato!c2 !tremolo!A4 |
 (D2F2 A2d2) | !marcato!c2 !staccato!A2 D4 |`,
 
+  strings: `X:1
+T:Four Strings Register Showcase
+Inst: string
+Tone: emotional
+Human: 0.24
+Room: concert
+Players: 3
+M:4/4
+L:1/4
+Q:1/4=72
+K:C
+C,, G,, C, G, | C G c e | g a b c' | e' d' c' G |
+G,, C, D, G, | C E G c | d' c' a g | C4 |`,
+
 ensemble: `Part: flute
 Inst: flute
 Trans: 0
@@ -195,6 +209,7 @@ app.innerHTML = `
             <option value="expression">Expression pack</option>
             <option value="expansion">Expansion pack</option>
             <option value="articulation">Articulation lab</option>
+            <option value="strings">Four strings showcase</option>
             <option value="ensemble">Ensemble (Part:)</option>
             <option value="ensembleStress">Ensemble stress test</option>
             <option value="broken">Broken Reflection</option>

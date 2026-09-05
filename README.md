@@ -101,6 +101,13 @@ The **Articulation lab** sample compares `!staccato!`, `!tenuto!`,
 `!marcato!`, and `!tremolo!` markers in the experimental player. Their
 normalized counts appear in the player diagnostics.
 
+String instruments include `violin`, `viola`, `cello`, `contrabass` (also
+`double bass`), and adaptive `string`. Adaptive strings select violin above
+MIDI 76, viola from 62, cello from 48, and contrabass below 48. All four use
+the same intonation/humanization pipeline, while their soundfont identity,
+register emphasis, attack, and resonance differ. The **Four strings showcase**
+sample demonstrates the adaptive mode across a wide range.
+
 Ensembles now receive perceptual loudness compensation: layered sections scale
 approximately by the inverse square root of player count, preserving width and
 variation without making `Players: 8` overwhelm the solo balance.
