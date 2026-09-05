@@ -1009,12 +1009,26 @@ function applyHumanization(tracks, humanize) {
       const volumeNoise = stableSignedNoise(`${seedBase}:volume`);
       const centsNoise = stableSignedNoise(`${seedBase}:cents`);
       const mistakeNoise = stableUnitNoise(`${seedBase}:mistake`);
+      const bowedString = isBowedStringInstrument(note.instrument);
+      const bowDirection = noteIndex % 2 === 0 ? 1 : -1;
+      const bowPressureNoise = stableSignedNoise(`${seedBase}:bow-pressure`);
+      const bowReleaseNoise = stableSignedNoise(`${seedBase}:bow-release`);
 
       const rubatoWidth =
         family === "strings" ? 0.01 : family === "woodwind" ? 0.008 : family === "brass" ? 0.006 : 0.005;
-      const timeShift = timingNoise * rubatoWidth * amount;
+      const bowTimeShift = bowedString
+        ? bowDirection * 0.0015 + bowPressureNoise * 0.0025
+        : 0;
+      const timeShift = (timingNoise * rubatoWidth + bowTimeShift) * amount;
       const start = Math.max(0, note.start + timeShift);
-      const durFactor = 1 + durationNoise * familyDurationDrift(family, note.instrument) * amount;
+      const bowDurationDrift = bowedString
+        ? bowDirection * 0.008 + bowReleaseNoise * 0.018
+        : 0;
+      const durFactor =
+        1 +
+        (durationNoise * familyDurationDrift(family, note.instrument) +
+          bowDurationDrift) *
+          amount;
       const nextDur = Math.max(0.01, dur * durFactor);
       note.start = start;
       note.end = start + nextDur;
@@ -1025,6 +1039,10 @@ function applyHumanization(tracks, humanize) {
         let volumeFactor = 1 + volumeNoise * volumeRange * amount;
         if (mistakeNoise < amount * 0.035 && family !== "keyboard") {
           volumeFactor *= 0.88 + stableUnitNoise(`${seedBase}:tone-slip`) * 0.2;
+        }
+        if (bowedString) {
+          // Alternating bow pressure adds a small attack/release irregularity.
+          volumeFactor *= 1 + (bowDirection * 0.035 + bowPressureNoise * 0.045) * amount;
         }
         note.volume = Math.max(10, Math.min(118, Math.round(note.volume * volumeFactor)));
       }
@@ -1132,6 +1150,19 @@ function isWoodwindInstrument(instrument) {
 function isViolinInstrument(instrument) {
   const name = normalizeInstrumentName(instrument);
   return name === "violin" || name === "fiddle";
+}
+
+function isBowedStringInstrument(instrument) {
+  const name = normalizeInstrumentName(instrument);
+  return (
+    name === "violin" ||
+    name === "fiddle" ||
+    name === "viola" ||
+    name === "cello" ||
+    name === "contrabass" ||
+    name === "string-ensemble-1" ||
+    name === "string-ensemble-2"
+  );
 }
 
 function normalizeInstrumentName(instrument) {
