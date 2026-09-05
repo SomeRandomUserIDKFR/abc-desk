@@ -162,7 +162,7 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
     cursorControl.onStart();
     for (const event of events) {
       const delay = Math.max(0, Math.round((Number(event.start) || 0) * 1000));
-      const duration = Math.max(0.04, (Number(event.end) || 0) - (Number(event.start) || 0));
+      const duration = eventDuration(event);
       timers.push(window.setTimeout(() => cursorControl.onEvent({
         elements: event.elements || event.elts || [],
         left: 0,
@@ -171,7 +171,7 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
       }), delay));
       timers.push(window.setTimeout(() => playNote(event, duration), delay));
     }
-    const end = Math.max(...events.map((event) => Number(event.end) || 0), 0);
+    const end = Math.max(...events.map(eventEnd), 0);
     timers.push(window.setTimeout(() => {
       cursorControl.onFinished();
       paused = true;
@@ -225,6 +225,14 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
     }, { once: true });
   }
 
+  function eventDuration(event) {
+    return Math.max(0.04, Number(event.duration) || ((Number(event.end) || 0) - (Number(event.start) || 0)));
+  }
+
+  function eventEnd(event) {
+    return (Number(event.start) || 0) + eventDuration(event);
+  }
+
   function stopSources() {
     for (const source of activeSources) {
       try {
@@ -248,7 +256,7 @@ function inspectTune(visualObj, audioParams) {
       events++;
       if (event.cmd === "note") {
         notes++;
-        end = Math.max(end, Number(event.end) || 0);
+        end = Math.max(end, eventEnd(event));
       }
     }
   }
