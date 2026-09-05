@@ -1163,7 +1163,14 @@ export function balanceHeldNotes(tracks, ctx = {}) {
             const drift = stableSignedNoise(
               `upper-register-drift:${trackIndex}:${phraseProfile.seed}:${index}:${note.pitch}`,
             );
-            note.cents += drift * (0.18 + registerFactor * 0.42) * sustainFactor * humanAmount;
+            // Use a softened response curve so small Human values still
+            // create audible life in high held notes without over-bending.
+            const driftAmount = Math.sqrt(humanAmount);
+            note.cents +=
+              drift *
+              (0.3 + registerFactor * 0.7) *
+              sustainFactor *
+              driftAmount;
           }
           if (playerCount > 1) {
             note.cents += Math.round(playerNoise * Math.min(2.5, playerCount * 0.12) * 10) / 10;
