@@ -17,17 +17,19 @@ npm run export-html
 
 The generated file is `abc-desk.standalone.html`. It bundles the app CSS and JS inline, so it does not require a sibling `assets/` folder or a local web server.
 
-## Player experiment
+## Player backends
 
-Open the app with `#testingframework` to opt into the experimental timer backend:
+The experimental player is now the default route. Use `#oldframework` to load the
+legacy abcjs controller as a fallback:
 
 ```text
-http://localhost:5173/#testingframework
+http://localhost:5173/
+http://localhost:5173/#oldframework
 ```
 
 This route uses the real abcjs soundfont renderer with a small experimental test clock,
 so instrument, tone, and Human settings remain audible while event counts and duration
-are exposed. It keeps the normal abcjs player untouched on every other URL. WAV export
+are exposed. The legacy player remains available under `#oldframework`. WAV export
 uses the same experimental Human/performance processing; the live Web Audio Room effect
 is playback-only.
 
