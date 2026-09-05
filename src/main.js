@@ -1,7 +1,6 @@
 import "./style.css";
 import abcjs from "abcjs";
 import "abcjs/abcjs-audio.css";
-import { jsPDF } from "jspdf";
 import {
   parseDeskHeaders,
   toStrictAbc,
@@ -375,6 +374,7 @@ async function saveScoreAsImage(mimeType, extension, quality) {
 }
 
 async function saveScoreAsPdf() {
+  const { jsPDF } = await import("jspdf");
   const canvas = await renderScoreCanvas(2);
   const pngDataUrl = canvas.toDataURL("image/png");
   const pageWidth = Math.max(1, Math.round(canvas.width * 0.75));
@@ -513,6 +513,12 @@ function initSynth() {
     return;
   }
 
+  audioEl.innerHTML =
+    '<button type="button" id="enable-audio" class="primary">Load playback</button>';
+}
+
+function enableSynth() {
+  if (synthControl || !supportsAudio) return;
   synthControl = new abcjs.synth.SynthController();
   synthControl.load("#audio", new CursorControl(), {
     displayLoop: true,
@@ -668,7 +674,20 @@ function renderScore() {
     setStatus(`Parse error: ${err.message ?? err}`, true);
     updateDownloadButtons();
   }
+
 }
+
+audioEl.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element) || !event.target.closest("#enable-audio")) {
+    return;
+  }
+  enableSynth();
+  if (synthControl && lastVisualObj && lastPrepared) {
+    const audioParams = deskAudioParams(lastPrepared.meta);
+    synthControl.setTune(lastVisualObj, false, audioParams);
+    synthControl.disable(false);
+  }
+});
 
 function scheduleRender() {
   clearTimeout(renderTimer);
