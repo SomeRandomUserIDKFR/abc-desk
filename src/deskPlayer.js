@@ -94,16 +94,15 @@ export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
   };
 }
 
-export function createTestingPlayer({ audioSelector, cursorControl }) {
+export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
   let loaded = false;
   let visualObj = null;
   let timers = [];
   let events = [];
   let diagnostics = null;
   let paused = false;
-  let audioContext = null;
-  let activeSources = [];
   let currentAudioParams = null;
+  let synth = null;
 
   return {
     supportsAudio: true,
@@ -166,23 +165,21 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
     },
   };
 
-  function play() {
+  async function play() {
     if (!visualObj || paused) return;
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) throw new Error("Web Audio is unavailable in the testing backend.");
-    audioContext ??= new AudioContextClass();
-    audioContext.resume();
+    synth = new abcjs.synth.CreateSynth();
+    await synth.init({ visualObj, options: currentAudioParams });
+    await synth.prime();
+    synth.start();
     cursorControl.onStart();
     for (const event of events) {
       const delay = Math.max(0, Math.round((Number(event.start) || 0) * 1000));
-      const duration = eventDuration(event);
       timers.push(window.setTimeout(() => cursorControl.onEvent({
         elements: event.elements || event.elts || [],
         left: 0,
         top: 0,
         height: 0,
       }), delay));
-      timers.push(window.setTimeout(() => playNote(event, duration), delay));
     }
     const end = Math.max(...events.map(eventEnd), 0);
     timers.push(window.setTimeout(() => {
@@ -194,7 +191,7 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
   function pause() {
     paused = true;
     clearTimers();
-    stopSources();
+    synth?.stop();
   }
 
   function reset() {
@@ -205,7 +202,8 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
 
   function invalidate() {
     clearTimers();
-    stopSources();
+    synth?.stop();
+    synth = null;
     cursorControl.onFinished();
     paused = false;
   }
@@ -213,55 +211,6 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
   function clearTimers() {
     for (const timer of timers) window.clearTimeout(timer);
     timers = [];
-  }
-
-  function playNote(event, duration) {
-    if (!audioContext || paused || event.pitch == null) return;
-    const oscillator = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    const now = audioContext.currentTime;
-    const frequency = 440 * Math.pow(2, (Number(event.pitch) - 69) / 12);
-    oscillator.type = oscillatorType(event, currentAudioParams);
-    oscillator.frequency.value = frequency;
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(
-      Math.min(
-        0.18,
-        Math.max(
-          0.02,
-          ((Number(event.volume) || 64) / 700) *
-            toneVolume(currentAudioParams),
-        ),
-      ),
-      now + 0.012,
-    );
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    oscillator.connect(gain).connect(audioContext.destination);
-    oscillator.start(now);
-    oscillator.stop(now + duration + 0.02);
-    activeSources.push(oscillator);
-    oscillator.addEventListener("ended", () => {
-      activeSources = activeSources.filter((source) => source !== oscillator);
-    }, { once: true });
-  }
-
-  function oscillatorType(event, params) {
-    const instrument = String(
-      event.instrument ?? params?.callbackContext?.forceInstrument ?? "",
-    ).toLowerCase();
-    const program = Number(event.instrument ?? params?.program);
-    if (/violin|fiddle|viola|cello|string/.test(instrument)) return "sawtooth";
-    if (/flute|clarinet|oboe|recorder|whistle/.test(instrument)) return "sine";
-    if (/trumpet|trombone|tuba|horn/.test(instrument)) return "square";
-    if ([40, 41, 42, 43, 110].includes(program)) return "sawtooth";
-    if ([73, 74, 78, 79].includes(program)) return "sine";
-    if ([56, 57, 58, 60].includes(program)) return "square";
-    return "triangle";
-  }
-
-  function toneVolume(params) {
-    const multiplier = Number(params?.soundFontVolumeMultiplier);
-    return Number.isFinite(multiplier) ? Math.min(1.5, Math.max(0.45, multiplier)) : 1;
   }
 
   function eventDuration(event) {
@@ -272,16 +221,6 @@ export function createTestingPlayer({ audioSelector, cursorControl }) {
     return (Number(event.start) || 0) + eventDuration(event);
   }
 
-  function stopSources() {
-    for (const source of activeSources) {
-      try {
-        source.stop();
-      } catch {
-        /* source may already have ended */
-      }
-    }
-    activeSources = [];
-  }
 }
 
 function inspectTune(visualObj, audioParams) {

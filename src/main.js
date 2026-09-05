@@ -519,6 +519,7 @@ function renderLint(issues) {
 function initSynth() {
   player = testingFramework
     ? createTestingPlayer({
+        abcjs,
         audioSelector: "#audio",
         cursorControl: new CursorControl(),
       })
