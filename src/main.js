@@ -676,11 +676,16 @@ audioEl.addEventListener("click", (event) => {
   if (!(event.target instanceof Element) || !event.target.closest("#enable-audio")) {
     return;
   }
-  enableSynth();
-  if (player?.loaded && lastVisualObj && lastPrepared) {
-    const audioParams = deskAudioParams(lastPrepared.meta);
-    player.setTune(lastVisualObj, audioParams);
+  try {
+    enableSynth();
+    if (player?.loaded && lastVisualObj && lastPrepared) {
+      const audioParams = deskAudioParams(lastPrepared.meta);
+      player.setTune(lastVisualObj, audioParams);
+      updateTestingMetrics();
+    }
+  } catch (error) {
     updateTestingMetrics();
+    setStatus(`Audio setup failed: ${error.message ?? error}`, true);
   }
 });
 

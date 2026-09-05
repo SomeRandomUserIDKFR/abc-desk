@@ -110,7 +110,6 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
 
     load() {
       if (loaded) return;
-      loaded = true;
       const audio = document.querySelector(audioSelector);
       if (!audio) throw new Error(`Testing backend target not found: ${audioSelector}`);
       audio.innerHTML = `
@@ -121,6 +120,7 @@ export function createTestingPlayer({ abcjs, audioSelector, cursorControl }) {
       audio.querySelector("[data-test-play]").addEventListener("click", play);
       audio.querySelector("[data-test-pause]").addEventListener("click", pause);
       audio.querySelector("[data-test-reset]").addEventListener("click", reset);
+      loaded = true;
     },
 
     get loaded() {
