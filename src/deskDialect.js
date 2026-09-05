@@ -687,6 +687,18 @@ export function parseDeskHeaders(source) {
   }
 
   let cleanAbc = kept.join("\n");
+  const inlineToneChanges = [];
+  cleanAbc = cleanAbc.replace(/\[Tone\s*:\s*([^\]]+)\]/gi, (match, rawTone, offset) => {
+    const tone = resolveTone(rawTone);
+    if (tone) {
+      inlineToneChanges.push({ at: offset, tone });
+    } else {
+      warnings.push(
+        `Unknown inline Tone: "${rawTone.trim()}" (try warm, bright, soft, sorrow, emotional, or neutral)`,
+      );
+    }
+    return " ".repeat(match.length);
+  });
   const fromInst = resolveInstrument(instrumentRaw);
   const tone = resolveTone(toneRaw);
   const humanize = resolveHumanization(humanRaw);
@@ -764,6 +776,7 @@ export function parseDeskHeaders(source) {
       toneRaw,
       humanRaw,
       room,
+      inlineToneChanges,
       roomRaw,
       distance,
       distanceRaw,
@@ -863,6 +876,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   if (!tracks?.length) return tracks;
 
   const toneMix = ctx?.tone?.toneMix ?? {};
+  const inlineToneChanges = [...(ctx?.inlineToneChanges ?? [])].sort((a, b) => a.at - b.at);
   const humanize = ctx?.humanize;
   const humanAmount = Math.max(0, Math.min(1, Number(humanize?.amount ?? 0) * 2));
 
@@ -895,23 +909,27 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       const dur = Math.max(0.001, note.end - note.start);
       const family = instrumentFamily(note.instrument);
       const profile = familyMixProfile(family);
+      const inlineTone = inlineToneChanges
+        .filter((change) => note.startChar == null || change.at <= note.startChar)
+        .at(-1)?.tone;
+      const noteToneMix = inlineTone?.toneMix ?? toneMix;
       let factor = profile.base;
       if (dur > HOLD_THRESHOLD) {
         const t = Math.min(1, (dur - HOLD_THRESHOLD) / HOLD_SPAN);
-        const holdToneFactor = dur > HOLD_THRESHOLD ? (toneMix.holdBias ?? 1) : 1;
+        const holdToneFactor = dur > HOLD_THRESHOLD ? (noteToneMix.holdBias ?? 1) : 1;
         factor *=
           Math.max(
             MIN_FACTOR,
             profile.holdBase - profile.holdDepth * Math.pow(t, family === "strings" ? 0.9 : 0.8),
-          ) * holdToneFactor * (toneMix.sustain ?? 1);
+          ) * holdToneFactor * (noteToneMix.sustain ?? 1);
       } else {
-        factor *= (profile.shortBoost ?? 1) * (toneMix.shortBoost ?? 1) * (toneMix.attack ?? 1);
+        factor *= (profile.shortBoost ?? 1) * (noteToneMix.shortBoost ?? 1) * (noteToneMix.attack ?? 1);
       }
-      if (isViolinInstrument(note.instrument) && toneMix.attack && toneMix.attack > 1.5) {
+      if (isViolinInstrument(note.instrument) && noteToneMix.attack && noteToneMix.attack > 1.5) {
         factor *= 1.24;
       }
-      if (isViolinInstrument(note.instrument) && toneMix.articulation) {
-        factor *= Math.min(1.7, 1 + toneMix.articulation * 0.18);
+      if (isViolinInstrument(note.instrument) && noteToneMix.articulation) {
+        factor *= Math.min(1.7, 1 + noteToneMix.articulation * 0.18);
       }
       if (profile.highCut && note.pitch >= profile.highCut) {
         factor *= family === "woodwind" && note.pitch >= profile.highCut + 4 ? 0.9 : 0.95;
@@ -919,7 +937,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       if (family === "brass" && note.pitch != null && note.pitch <= 50) {
         factor *= 1.03;
       }
-      const volumeCap = (toneMix.attack ?? 1) > 1.5 ? 108 : 118;
+      const volumeCap = (noteToneMix.attack ?? 1) > 1.5 ? 108 : 118;
       note.volume = Math.max(12, Math.min(volumeCap, Math.round(note.volume * factor)));
     }
   }
@@ -1731,6 +1749,7 @@ export function deskAudioParams(meta) {
       drum1: meta.drum1,
       drum2: meta.drum2,
       tone: meta.tone,
+      inlineToneChanges: meta.inlineToneChanges,
       humanize: meta.humanize,
       room: meta.room,
       distance: meta.distance,
@@ -1741,6 +1760,7 @@ export function deskAudioParams(meta) {
       balanceHeldNotes(tracks, {
         forceInstrument: ctx?.forceInstrument ?? forceInstrument,
         sourceText: ctx?.sourceText ?? meta.sourceText,
+        inlineToneChanges: ctx?.inlineToneChanges ?? meta.inlineToneChanges,
         drum1: ctx?.drum1 ?? meta.drum1,
         drum2: ctx?.drum2 ?? meta.drum2,
         tone: ctx?.tone ?? meta.tone,

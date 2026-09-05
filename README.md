@@ -79,6 +79,7 @@ Put `%%MIDI program` **before** `K:` (in the header). After `K:` / mid-body it c
 
 - **Inst: / %%MIDI program** — GM instrument for playback (`flute`, `violin`, `atmosphere`, or `0`–`127`)
 - **Tone:** playback character — `neutral`, `warm`, `bright`, `soft`, `rustic`, `upbeat`, `sorrow`, `emotional`, `aggressive`, `swing`
+- **Inline Tone:** change tone from a specific point in the music with `[Tone:sorrow]`. The header `Tone:` remains the initial tone; inline markers are removed before abcjs parsing and affect following notes in the experimental renderer.
 - **Room:** experimental Web Audio acoustics — `dry`, `studio`, `chamber`, `concert`, `cathedral` (active in `#testingframework`). Concert models hall-like pre-delay, asymmetric early reflections, stereo width, and a frequency-damped late field; WAV export uses the same room model.
 - **Players:** experimental ensemble size, `1`–`32`; creates layered performers with independent phrase timing, gain, pitch drift, and stereo placement
 - **Distance:** experimental player spacing, `0`–`1`; increases stereo spread and room send
