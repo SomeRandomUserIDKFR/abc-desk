@@ -125,9 +125,10 @@ export const INSTRUMENTS = {
   cello: { program: 42, label: "Cello" },
   chello: { program: 42, label: "Cello" },
   violoncello: { program: 42, label: "Cello" },
-  contrabass: { program: 43, label: "Contrabass" },
-  "double bass": { program: 43, label: "Double Bass" },
-  "double-bass": { program: 43, label: "Double Bass" },
+  // Use abcjs's dependable acoustic-bass bank for low-string playback.
+  contrabass: { program: 32, label: "Contrabass" },
+  "double bass": { program: 32, label: "Double Bass" },
+  "double-bass": { program: 32, label: "Double Bass" },
   harp: { program: 46, label: "Orchestral Harp" },
   timpani: { program: 47, label: "Timpani" },
   string: { program: 48, label: "Adaptive Strings", adaptive: true },
