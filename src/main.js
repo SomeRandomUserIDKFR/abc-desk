@@ -707,7 +707,7 @@ function updateTestingMetrics() {
   if (!testingMetrics) return;
   const metrics = player?.getDiagnostics();
   testingMetrics.textContent = metrics
-    ? `${player.backendName}: ${metrics.tracks} tracks · ${metrics.notes} notes · ${metrics.events} events · ${metrics.duration}s`
+    ? `${player.backendName}: ${metrics.tracks} tracks · ${metrics.notes} notes · ${metrics.events} events · ${metrics.duration}s · ${metrics.phrases} phrases · ${metrics.expressionEvents} curves · ${metrics.toneEvents} tone changes · ${metrics.players} players`
     : "Load playback to inspect normalized playback events.";
 }
 

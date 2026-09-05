@@ -97,6 +97,11 @@ performance event model before scheduling and highlighting. This keeps abcjs
 as the parser/soundfont provider while allowing timing, expression, players,
 articulation, and audio routing to evolve independently.
 
+That model now includes typed tone and room events, phrase objects, volume
+expression curves, per-note articulation envelopes, and player metadata. These
+are currently used for diagnostics and as extension points; the existing
+soundfont playback remains unchanged.
+
 ### Note / expression marks
 
 | Write | Meaning |

@@ -4,7 +4,7 @@
  * The current backend delegates to abcjs, but the application only depends on
  * this focused interface so a purpose-built scheduler can replace it later.
  */
-import { normalizePerformanceTracks } from "./deskEvents.js";
+import { buildPerformanceGraph, normalizePerformanceTracks } from "./deskEvents.js";
 
 export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
   const supportsAudio = abcjs.synth.supportsAudio();
@@ -151,9 +151,10 @@ export function createTestingPlayer({
       events = tracks.flat().filter(
         (event) => event.cmd === "note" && !event.ensembleReplica,
       );
+      const graph = buildPerformanceGraph(tracks, currentAudioParams?.callbackContext);
       attachVisualElements(events, visualObj);
       events = groupSimultaneousEvents(events);
-      diagnostics = summarizeEvents(tracks);
+      diagnostics = summarizeEvents(tracks, {}, graph);
       paused = false;
     },
 
@@ -590,7 +591,7 @@ function inspectTune(visualObj, audioParams) {
   return summarizeEvents(tracks, { notes, events, end });
 }
 
-function summarizeEvents(tracks, counts = {}) {
+function summarizeEvents(tracks, counts = {}, graph = null) {
   let notes = counts.notes ?? 0;
   let events = counts.events ?? 0;
   let end = counts.end ?? 0;
@@ -610,5 +611,10 @@ function summarizeEvents(tracks, counts = {}) {
     notes,
     events,
     duration: Math.round(end * 1000) / 1000,
+    phrases: graph?.phrases.length ?? 0,
+    expressionEvents: graph?.expression.length ?? 0,
+    toneEvents: graph?.tone.length ?? 0,
+    roomEvents: graph?.room.length ?? 0,
+    players: graph?.player.count ?? 1,
   };
 }

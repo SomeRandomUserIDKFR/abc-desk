@@ -28,9 +28,85 @@ export function normalizePerformanceTracks(tracks) {
         endChar: finiteNumber(event.endChar),
         gap: finiteNumber(event.gap),
         endType: event.endType,
+        articulation: event.articulation ?? (event.endType === "tenuto" ? "legato" : "detache"),
+        envelope: {
+          attack: event.endType === "tenuto" ? 0.02 : 0.008,
+          release: event.endType === "tenuto" ? 0.08 : 0.035,
+        },
+        player: {
+          trackIndex,
+          replica: Boolean(event.ensembleReplica),
+        },
         ensembleReplica: Boolean(event.ensembleReplica),
       })),
   );
+}
+
+export function buildPerformanceGraph(tracks, context = {}) {
+  const notes = tracks.flat();
+  const phrases = [];
+  const expression = [];
+  for (const track of tracks) {
+    let phrase = [];
+    for (const note of track) {
+      if (phrase.length && note.start - phrase[phrase.length - 1].end > 0.08) {
+        phrases.push(createPhrase(phrase));
+        phrase = [];
+      }
+      phrase.push(note);
+    }
+    if (phrase.length) phrases.push(createPhrase(phrase));
+  }
+  for (const phrase of phrases) {
+    expression.push({
+      type: "expression",
+      target: "volume",
+      start: phrase.start,
+      end: phrase.end,
+      curve: "phrase-arch",
+      intensity: phrase.intensity,
+    });
+  }
+  const room = context.room
+    ? [{ type: "room", start: 0, room: context.room.name }]
+    : [];
+  const tone = (context.inlineToneChanges ?? []).map((change) => ({
+    type: "tone",
+    startChar: change.at,
+    tone: change.tone.name,
+  }));
+  return {
+    events: [
+      ...notes,
+      ...expression,
+      ...tone,
+      ...room,
+    ],
+    phrases,
+    expression,
+    tone,
+    room,
+    player: {
+      count: Math.max(1, Number(context.players) || 1),
+      metadata: tracks.map((_, trackIndex) => ({
+        trackIndex,
+        section: trackIndex < 2 ? "upper-strings" : "ensemble",
+      })),
+    },
+  };
+}
+
+function createPhrase(notes) {
+  return {
+    type: "phrase",
+    start: notes[0].start,
+    end: Math.max(...notes.map((note) => note.end ?? note.start)),
+    intensity: Math.min(
+      1,
+      Math.max(...notes.map((note) => Number(note.volume) || 0), 1) / 127,
+    ),
+    noteIds: notes.map((note) => note.id),
+  };
 }
 
 function finiteNumber(value) {
