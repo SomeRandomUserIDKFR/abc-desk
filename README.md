@@ -102,9 +102,9 @@ The **Articulation lab** sample compares `!staccato!`, `!tenuto!`,
 normalized counts appear in the player diagnostics.
 
 String instruments include `violin`, `viola`, `cello`, `contrabass` (also
-`double bass`), and `string`. `string` uses the native violin soundfont as its
-shared bowed-string base, preserving the original violin character while
-register-aware shaping adds darker low notes and broader middle/upper response.
+`double bass`), and `string`. `string` uses the exact native violin playback path as its shared bowed-string
+base, preserving the original violin character for violin-range notes while
+the shared string profile provides the common bowed response.
 All four named instruments use the same intonation/humanization pipeline, while
 their soundfont identities remain distinct. The **Four strings showcase**
 sample demonstrates the shared base across a wide range.

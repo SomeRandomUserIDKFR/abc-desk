@@ -1825,7 +1825,7 @@ export function deskAudioParams(meta) {
       room: meta.room,
       distance: meta.distance,
       players: meta.players,
-      adaptiveStrings: Boolean(meta.instrument?.adaptive),
+      adaptiveStrings: false,
     },
     pan,
     sequenceCallback: (tracks, ctx) =>
@@ -1838,7 +1838,7 @@ export function deskAudioParams(meta) {
         tone: ctx?.tone ?? meta.tone,
         humanize: ctx?.humanize ?? meta.humanize,
         players: ctx?.players ?? meta.players,
-        adaptiveStrings: ctx?.adaptiveStrings ?? Boolean(meta.instrument?.adaptive),
+        adaptiveStrings: ctx?.adaptiveStrings ?? false,
         expressionExpansion: ctx?.expressionExpansion ?? false,
         experimentalPerformance: ctx?.experimentalPerformance ?? false,
       }),
