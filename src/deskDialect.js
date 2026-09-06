@@ -467,6 +467,18 @@ export function expandDeskDecorations(abc) {
     }
   }
 
+  function violinBowCycle(note, duration, seed, amount) {
+    const pitch = Number(note.pitch);
+    const register = Number.isFinite(pitch) ? Math.max(-1, Math.min(1, (pitch - 67) / 24)) : 0;
+    const bowLength = 0.55 + stableUnitNoise(`${seed}:bow-length`) * 0.35;
+    const bowPhase = stableUnitNoise(`${seed}:bow-phase`) * Math.PI * 2;
+    const cycle = Math.sin((duration / bowLength) * Math.PI * 1.6 + bowPhase);
+    const settling = duration > 0.3 ? Math.min(1, (duration - 0.3) / 1.4) : 0;
+    const pressure = cycle * 0.035 * settling;
+    const registerResponse = register * 0.012 * Math.min(1, duration * 2);
+    return 1 + (pressure + registerResponse) * amount;
+  }
+
   out = out.replace(DESK_DECO_RE, (_, name) => {
     const key = name.toLowerCase();
     const def = DESK_DECORATIONS[key];
@@ -1218,7 +1230,9 @@ function applyViolinArticulation(tracks, humanAmount) {
         note.volume = Math.max(12, Math.round(note.volume * (0.96 - humanAmount * 0.035)));
       }
       if (next.volume != null) {
-        next.volume = Math.max(12, Math.round(next.volume * (0.985 + humanAmount * 0.02)));
+        // A slur carries bow energy into the next pitch instead of retriggering
+        // a full-strength sample attack.
+        next.volume = Math.max(12, Math.round(next.volume * (0.965 - humanAmount * 0.02)));
       }
     }
   }
@@ -1316,6 +1330,9 @@ function applyHumanization(tracks, humanize) {
         if (bowedString) {
           // Alternating bow pressure adds a small attack/release irregularity.
           volumeFactor *= 1 + (bowDirection * 0.045 + bowPressureNoise * 0.06) * amount;
+          if (isViolinInstrument(note.instrument)) {
+            volumeFactor *= violinBowCycle(note, dur, seedBase, amount);
+          }
           if (mistakeNoise < amount * 0.06) {
             volumeFactor *= 0.9 + stableUnitNoise(`${seedBase}:bow-slip`) * 0.12;
           }
@@ -1327,6 +1344,15 @@ function applyHumanization(tracks, humanize) {
       if (centsWidth) {
         const existing = Number(note.cents) || 0;
         let cents = existing + centsNoise * centsWidth * amount;
+        if (isViolinInstrument(note.instrument)) {
+          const previous = track[noteIndex - 1];
+          const previousPitch = Number(previous?.pitch);
+          const pitch = Number(note.pitch);
+          const interval = Number.isFinite(previousPitch) ? pitch - previousPitch : 0;
+          const approach = interval > 0 ? -1 : interval < 0 ? 1 : 0;
+          const registerBias = pitch >= 79 ? -0.7 : pitch <= 55 ? 0.55 : 0;
+          cents += (approach * 1.8 + registerBias) * amount;
+        }
         if (mistakeNoise < amount * 0.025) {
           cents += stableSignedNoise(`${seedBase}:cents-slip`) * centsWidth * 0.6 * amount;
         }

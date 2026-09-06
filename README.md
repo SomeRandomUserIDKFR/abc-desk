@@ -37,6 +37,9 @@ uses the same experimental Human/performance processing; the live Web Audio Room
 is playback-only.
 
 `#violin` uses the experimental player with the native violin instrument preset.
+With Humanization enabled, the experimental path adds violin-specific bow-cycle
+variation, register-aware response, contextual intonation drift, and softer slur
+re-attacks while retaining the underlying abcjs violin soundfont.
 
 ## Live site
 
