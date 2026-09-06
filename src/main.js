@@ -535,15 +535,18 @@ class CursorControl {
     }
     for (const set of event.elements) {
       for (const el of set) {
-        el.classList.add("abcjs-highlight");
-        if (this.experimental && event.highlightDuration) {
-          const token = {};
-          this.experimentalActive.set(el, token);
-          window.setTimeout(() => {
-            if (this.experimentalActive.get(el) !== token) return;
-            this.experimentalActive.delete(el);
-            el.classList.remove("abcjs-highlight");
-          }, event.highlightDuration);
+        const targets = [el, ...el.querySelectorAll?.("path, ellipse, line, polygon, polyline, text") ?? []];
+        for (const target of targets) {
+          target.classList.add("abcjs-highlight");
+          if (this.experimental && event.highlightDuration) {
+            const token = {};
+            this.experimentalActive.set(target, token);
+            window.setTimeout(() => {
+              if (this.experimentalActive.get(target) !== token) return;
+              this.experimentalActive.delete(target);
+              target.classList.remove("abcjs-highlight");
+            }, event.highlightDuration);
+          }
         }
       }
     }
