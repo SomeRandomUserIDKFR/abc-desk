@@ -130,7 +130,9 @@ export const INSTRUMENTS = {
   "double-bass": { program: 43, label: "Double Bass" },
   harp: { program: 46, label: "Orchestral Harp" },
   timpani: { program: 47, label: "Timpani" },
-  string: { program: 40, label: "Adaptive Strings", adaptive: true },
+  // Keep the adaptive alias on the exact violin metadata path. Register-aware
+  // behavior is applied later, without changing the loaded instrument identity.
+  string: { program: 40, label: "Violin" },
   strings: { program: 48, label: "String Ensemble" },
   trumpet: { program: 56, label: "Trumpet" },
   trump: { program: 56, label: "Trumpet" },
