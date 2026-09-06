@@ -2,7 +2,7 @@ import * as JSSynth from "js-synthesizer";
 import fluidSynthScriptUrl from "js-synthesizer/externals/libfluidsynth-2.4.6.js?url";
 
 const MUSESCORE_SOUNDFONT_URL =
-  "https://raw.githubusercontent.com/marmooo/free-soundfonts/421699128a5b271b46acf344e5808b95ce5d90b5/docs/MuseScore_General_v0.2/040.sf3";
+  "https://raw.githubusercontent.com/wrightflyer/SF2_SoundFonts/97e9b8d0a2cd37064e7d031243b25df573372140/GeneralUser%20GS%20MuseScore%20v1.442.sf2";
 
 let engineReady;
 
