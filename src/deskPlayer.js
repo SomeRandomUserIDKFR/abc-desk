@@ -10,6 +10,7 @@ export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
   const supportsAudio = abcjs.synth.supportsAudio();
   let controller = null;
   let diagnostics = null;
+  let playTransition = false;
 
   return {
     supportsAudio,
@@ -26,6 +27,16 @@ export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
         displayProgress: true,
         displayWarp: true,
       });
+      const controllerPlay = controller.play.bind(controller);
+      controller.play = (...args) => {
+        if (playTransition) {
+          return Promise.resolve({ status: "busy" });
+        }
+        playTransition = true;
+        return Promise.resolve(controllerPlay(...args)).finally(() => {
+          playTransition = false;
+        });
+      };
     },
 
     get loaded() {
@@ -49,6 +60,7 @@ export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
 
     invalidate() {
       if (!controller) return;
+      playTransition = false;
       try {
         if (typeof controller.pause === "function") controller.pause();
       } catch {
