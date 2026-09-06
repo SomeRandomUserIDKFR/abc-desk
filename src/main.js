@@ -132,6 +132,31 @@ F2A2 d2c2 | B2G2 A2F2 | D4 z4 | A,8 |`,
 };
 
 const shared = readShareFromLocation();
+
+function presetInstrument(source, instrument) {
+  const lines = String(source).split(/\r?\n/);
+  const instrumentLine = /^\s*Inst\s*:/i;
+  const midiLine = /^\s*%%MIDI\s+program\b/i;
+  let foundInstrument = false;
+  const preset = lines.map((line) => {
+    if (instrumentLine.test(line)) {
+      foundInstrument = true;
+      return `Inst: ${instrument}`;
+    }
+    if (midiLine.test(line)) {
+      foundInstrument = true;
+      return "%%MIDI program 40";
+    }
+    return line;
+  });
+
+  if (!foundInstrument) {
+    const keyIndex = preset.findIndex((line) => /^\s*K\s*:/i.test(line));
+    preset.splice(keyIndex >= 0 ? keyIndex : 0, 0, `Inst: ${instrument}`);
+  }
+  return preset.join("\n");
+}
+
 const frameworkHash = window.location.hash.toLowerCase();
 const oldFramework = frameworkHash === "#oldframework";
 const testingFramework = frameworkHash === "#testingframework";
@@ -598,30 +623,6 @@ function prepareSource(source) {
   if (partInfo.isMultiPart && partInfo.assembledAbc) {
     working = partInfo.assembledAbc;
     partsMeta = partInfo.parts;
-  }
-
-  function presetInstrument(source, instrument) {
-    const lines = String(source).split(/\r?\n/);
-    const instrumentLine = /^\s*Inst\s*:/i;
-    const midiLine = /^\s*%%MIDI\s+program\b/i;
-    let foundInstrument = false;
-    const preset = lines.map((line) => {
-      if (instrumentLine.test(line)) {
-        foundInstrument = true;
-        return `Inst: ${instrument}`;
-      }
-      if (midiLine.test(line)) {
-        foundInstrument = true;
-        return "%%MIDI program 40";
-      }
-      return line;
-    });
-
-    if (!foundInstrument) {
-      const keyIndex = preset.findIndex((line) => /^\s*K\s*:/i.test(line));
-      preset.splice(keyIndex >= 0 ? keyIndex : 0, 0, `Inst: ${instrument}`);
-    }
-    return preset.join("\n");
   }
 
   const parsed = parseDeskHeaders(working);
