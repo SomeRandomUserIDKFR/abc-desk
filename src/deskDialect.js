@@ -1405,6 +1405,13 @@ function applyBowedStringArticulation(tracks, humanAmount) {
           Math.min(next.start + overlap, note.end + overlap),
         );
         note.articulation = wideLeap ? "portamento" : "legato";
+        note.legatoBlend = Math.round(
+          (0.72 + glideWeight * 0.2 + humanAmount * variation * 0.08) * 100,
+        ) / 100;
+        if (note.bowEnvelope) {
+          note.bowEnvelope.attack = Math.round(note.bowEnvelope.attack * 0.45 * 1000) / 1000;
+          note.bowEnvelope.release = Math.round(note.bowEnvelope.release * 1.12 * 1000) / 1000;
+        }
         if (wideLeap) {
           const direction = Math.sign(next.pitch - note.pitch);
           const glideCents =
