@@ -820,31 +820,45 @@ function renderPerformanceTimeline(metrics) {
     segment.title = `${item.type ?? className}: ${start.toFixed(2)}–${end.toFixed(2)}s`;
     parent.appendChild(segment);
   };
-  const addExpressionSpike = (parent, note) => {
-    const start = Math.max(0, Number(note.start) || 0);
-    const end = Math.max(start, Number(note.end) || start);
-    const intensity = Math.max(0.12, Math.min(1, (Number(note.volume) || 32) / 127));
-    const spike = document.createElement("span");
-    spike.className = "timeline-spike";
-    spike.style.left = `${(start / duration) * 100}%`;
-    spike.style.width = `${Math.max(0.18, ((end - start) / duration) * 100)}%`;
-    spike.style.height = `${Math.round(18 + intensity * 72)}%`;
-    spike.title = `Note intensity: ${Math.round(intensity * 100)}%`;
-    parent.appendChild(spike);
+  const addExpressionGraph = (parent, notes) => {
+    const points = [];
+    for (const note of notes) {
+      const start = Math.max(0, Number(note.start) || 0);
+      const end = Math.max(start, Number(note.end) || start);
+      const intensity = Math.max(0.08, Math.min(1, (Number(note.volume) || 32) / 127));
+      const x = Math.min(100, (start / duration) * 100);
+      const endX = Math.min(100, (end / duration) * 100);
+      const peak = 88 - intensity * 70;
+      points.push(`${x},88`, `${Math.max(x + 0.05, endX - 0.08)},${peak}`, `${endX},88`);
+    }
+    if (!points.length) return;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.classList.add("timeline-expression-graph");
+    svg.setAttribute("viewBox", "0 0 100 100");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Expression intensity graph");
+    const baseline = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    baseline.setAttribute("x1", "0");
+    baseline.setAttribute("x2", "100");
+    baseline.setAttribute("y1", "88");
+    baseline.setAttribute("y2", "88");
+    baseline.classList.add("timeline-expression-baseline");
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    line.setAttribute("points", points.join(" "));
+    line.classList.add("timeline-expression-line");
+    svg.append(baseline, line);
+    parent.appendChild(svg);
   };
 
   timelinePhrases.innerHTML = "";
   timelineExpression.innerHTML = "";
   timelineTempo.innerHTML = "";
   for (const phrase of graph.phrases ?? []) addRange(timelinePhrases, phrase, "phrase");
-  for (const curve of graph.expression ?? []) {
-    addRange(timelineExpression, curve, "expression");
-  }
-  for (const note of graph.events ?? []) {
-    if (note.type === "note" || note.cmd === "note") {
-      addExpressionSpike(timelineExpression, note);
-    }
-  }
+  addExpressionGraph(
+    timelineExpression,
+    (graph.events ?? []).filter((note) => note.type === "note" || note.cmd === "note"),
+  );
   for (const curve of graph.tempo ?? []) addRange(timelineTempo, curve, "tempo");
 
   timelineLegend.innerHTML = "";
