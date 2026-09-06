@@ -182,11 +182,14 @@ F2A2 d2c2 | B2G2 A2F2 | D4 z4 | A,8 |`,
 };
 
 const shared = readShareFromLocation();
-const DEFAULT_ABC = shared || SAMPLES.cooleys;
 const frameworkHash = window.location.hash.toLowerCase();
 const oldFramework = frameworkHash === "#oldframework";
 const testingFramework = frameworkHash === "#testingframework";
+const violinPreset = frameworkHash === "#violin";
 const experimentalFramework = !oldFramework;
+const DEFAULT_ABC =
+  shared ||
+  (violinPreset ? presetInstrument(SAMPLES.cooleys, "violin") : SAMPLES.cooleys);
 
 const app = document.querySelector("#app");
 
@@ -247,7 +250,7 @@ app.innerHTML = `
       ${
         experimentalFramework
           ? `<div id="testing-panel" class="lint-panel" aria-label="Player experiment">
-              <div class="lint-header"><h2 class="panel-title">Player experiment</h2><span class="lint-count">${testingFramework ? "#testingframework" : "default"}</span></div>
+              <div class="lint-header"><h2 class="panel-title">Player experiment</h2><span class="lint-count">${testingFramework ? "#testingframework" : violinPreset ? "#violin" : "default"}</span></div>
               <p id="testing-metrics" class="lint-empty">Render a tune to inspect normalized playback events.</p>
               <div id="performance-timeline" class="performance-timeline" aria-label="Performance timeline" hidden>
                 <div class="timeline-header"><span>Performance map</span><span id="timeline-time">0.0s</span></div>
@@ -332,6 +335,29 @@ function safeFileStem(raw) {
     .replace(/^_+|_+$/g, "")
     .slice(0, 64);
   return base || "untitled";
+}
+
+function presetInstrument(source, instrument) {
+  const lines = String(source).split(/\r?\n/);
+  const instrumentLine = new RegExp("^\\s*Inst\\s*:", "i");
+  const midiLine = new RegExp("^\\s*%%MIDI\\s+program\\b", "i");
+  let replaced = false;
+  const result = lines.map((line) => {
+    if (instrumentLine.test(line)) {
+      replaced = true;
+      return `Inst: ${instrument}`;
+    }
+    if (midiLine.test(line)) {
+      replaced = true;
+      return "%%MIDI program 40";
+    }
+    return line;
+  });
+  if (!replaced) {
+    const insertAt = result.findIndex((line) => /^\s*K\s*:/i.test(line));
+    result.splice(insertAt >= 0 ? insertAt : 0, 0, `Inst: ${instrument}`);
+  }
+  return result.join("\n");
 }
 
 function tuneFileStem() {
