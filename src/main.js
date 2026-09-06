@@ -926,6 +926,7 @@ downloadMidiBtn.addEventListener("click", () => {
 
 downloadWavBtn.addEventListener("click", async () => {
   let wav = null;
+  downloadWavBtn.disabled = true;
   try {
     if (!supportsAudio) {
       setStatus("WAV download is not supported in this browser.", true);
@@ -936,6 +937,7 @@ downloadWavBtn.addEventListener("click", async () => {
       return;
     }
     const audioParams = deskAudioParams(lastPrepared.meta);
+    setStatus("Rendering WAV…");
     wav = await player.createWav(lastVisualObj, audioParams);
     triggerDownloadFromUrl(wav.url, `${tuneFileStem()}.wav`);
     setStatus("Downloaded WAV file.");
@@ -947,6 +949,7 @@ downloadWavBtn.addEventListener("click", async () => {
     } catch {
       /* ignore cleanup errors */
     }
+    updateDownloadButtons();
   }
 });
 

@@ -481,17 +481,18 @@ function fillRoomImpulse(impulse, room) {
       data[index] = (noise * 0.78 + shimmer * 0.22) * envelope * highFrequencyLoss;
     }
 
-    function createRoomNoiseBuffer(context, room) {
-      const length = Math.max(1, Math.floor(context.sampleRate * 2));
-      const buffer = context.createBuffer(1, length, context.sampleRate);
-      const data = buffer.getChannelData(0);
-      const seed = hashString(room.name ?? room.label ?? "room");
-      for (let index = 0; index < length; index++) {
-        data[index] = stableNoise(seed, index) * 0.18;
-      }
-      return buffer;
-    }
   }
+}
+
+function createRoomNoiseBuffer(context, room, seconds = 2) {
+  const length = Math.max(1, Math.ceil(context.sampleRate * seconds));
+  const buffer = context.createBuffer(1, length, context.sampleRate);
+  const data = buffer.getChannelData(0);
+  const seed = hashString(room.name ?? room.label ?? "room");
+  for (let index = 0; index < length; index++) {
+    data[index] = stableNoise(seed, index) * 0.18;
+  }
+  return buffer;
 }
 
 function hashString(value) {
@@ -557,14 +558,18 @@ async function renderRoomWav(audioBuffer, room) {
   air.connect(dry).connect(context.destination);
   air.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(context.destination);
   const roomNoise = context.createBufferSource();
-  roomNoise.buffer = createRoomNoiseBuffer(context, room);
-  roomNoise.loop = true;
+  roomNoise.buffer = createRoomNoiseBuffer(
+    context,
+    room,
+    context.length / audioBuffer.sampleRate,
+  );
   roomNoiseFilter.type = "highpass";
   roomNoiseFilter.frequency.value = 4200;
   roomNoiseFilter.Q.value = 0.25;
   roomNoiseGain.gain.value = Math.min(0.002, 0.00035 + room.mix * 0.0012);
   roomNoise.connect(roomNoiseFilter).connect(roomNoiseGain).connect(context.destination);
   roomNoise.start();
+  roomNoise.stop(context.length / audioBuffer.sampleRate);
   for (const reflection of [
     { delay: 0.011, level: 0.52, pan: -0.72 },
     { delay: 0.019, level: 0.37, pan: 0.64 },
