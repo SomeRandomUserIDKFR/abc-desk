@@ -683,6 +683,10 @@ function initSynth() {
     return;
   }
 
+  if (museScoreFramework) {
+    player.load();
+    return;
+  }
   audioEl.innerHTML =
     '<button type="button" id="enable-audio" class="primary">Load playback</button>';
 }
