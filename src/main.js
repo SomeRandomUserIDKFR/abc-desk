@@ -817,12 +817,31 @@ function renderPerformanceTimeline(metrics) {
     segment.title = `${item.type ?? className}: ${start.toFixed(2)}–${end.toFixed(2)}s`;
     parent.appendChild(segment);
   };
+  const addExpressionSpike = (parent, note) => {
+    const start = Math.max(0, Number(note.start) || 0);
+    const end = Math.max(start, Number(note.end) || start);
+    const intensity = Math.max(0.12, Math.min(1, (Number(note.volume) || 32) / 127));
+    const spike = document.createElement("span");
+    spike.className = "timeline-spike";
+    spike.style.left = `${(start / duration) * 100}%`;
+    spike.style.width = `${Math.max(0.18, ((end - start) / duration) * 100)}%`;
+    spike.style.height = `${Math.round(18 + intensity * 72)}%`;
+    spike.title = `Note intensity: ${Math.round(intensity * 100)}%`;
+    parent.appendChild(spike);
+  };
 
   timelinePhrases.innerHTML = "";
   timelineExpression.innerHTML = "";
   timelineTempo.innerHTML = "";
   for (const phrase of graph.phrases ?? []) addRange(timelinePhrases, phrase, "phrase");
-  for (const curve of graph.expression ?? []) addRange(timelineExpression, curve, "expression");
+  for (const curve of graph.expression ?? []) {
+    addRange(timelineExpression, curve, "expression");
+  }
+  for (const note of graph.events ?? []) {
+    if (note.type === "note" || note.cmd === "note") {
+      addExpressionSpike(timelineExpression, note);
+    }
+  }
   for (const curve of graph.tempo ?? []) addRange(timelineTempo, curve, "tempo");
 
   timelineLegend.innerHTML = "";

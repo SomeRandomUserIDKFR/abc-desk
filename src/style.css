@@ -416,6 +416,21 @@ button.primary:hover {
   opacity: 0.8;
 }
 
+.timeline-expression .timeline-spike {
+  position: absolute;
+  bottom: 0.72rem;
+  min-width: 1px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(180deg, var(--accent), rgba(232, 196, 104, 0.35));
+  opacity: 0.82;
+  transform-origin: bottom;
+  transition: height 0.12s ease, opacity 0.12s ease;
+}
+
+.timeline-expression .timeline-spike:hover {
+  opacity: 1;
+}
+
 .timeline-tempo .timeline-segment {
   top: 1.65rem;
   height: 0.3rem;
