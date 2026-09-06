@@ -41,6 +41,13 @@ export function normalizePerformanceTracks(tracks) {
           : null,
         vibratoRate: finiteNumber(event.vibratoRate),
         vibratoDepth: finiteNumber(event.vibratoDepth),
+        portamento: event.portamento
+          ? {
+              interval: finiteNumber(event.portamento.interval),
+              weight: finiteNumber(event.portamento.weight),
+              direction: finiteNumber(event.portamento.direction),
+            }
+          : null,
         envelope: {
           attack: event.endType === "tenuto" ? 0.02 : 0.008,
           release: event.endType === "tenuto" ? 0.08 : 0.035,

@@ -1376,18 +1376,36 @@ function applyBowedStringArticulation(tracks, humanAmount) {
 
       if (slurred) {
         const wideLeap = interval >= 5;
+        const register = Math.max(0, Math.min(1, (Number(note.pitch) - 48) / 48));
         const variation = stableSignedNoise(
           `string-legato:${note.start}:${note.pitch}:${next.pitch}:${note.instrument || ""}`,
         );
-        const overlap = Math.min(wideLeap ? 0.018 : 0.012, step * 0.1) *
-          (0.82 + humanAmount * (0.18 + variation * 0.08));
+        const glideWeight = wideLeap
+          ? Math.min(1, (interval - 4) / 12)
+          : interval >= 2
+            ? 0.35
+            : 0.15;
+        const overlap = Math.min(
+          wideLeap ? 0.032 : 0.014,
+          step * (wideLeap ? 0.14 : 0.1),
+        ) * (0.78 + glideWeight * 0.16 + register * 0.08 + humanAmount * variation * 0.08);
         note.end = Math.max(
           note.start + 0.01,
           Math.min(next.start + overlap, note.end + overlap),
         );
         note.articulation = wideLeap ? "portamento" : "legato";
         if (wideLeap) {
-          note.cents = (Number(note.cents) || 0) + Math.sign(next.pitch - note.pitch) * 0.8;
+          const direction = Math.sign(next.pitch - note.pitch);
+          const glideCents =
+            direction *
+            (0.7 + glideWeight * 1.3 + register * 0.35 + variation * 0.25) *
+            humanAmount;
+          note.cents = (Number(note.cents) || 0) + glideCents;
+          note.portamento = {
+            interval,
+            weight: Math.round((0.45 + glideWeight * 0.45 + variation * 0.1) * 100) / 100,
+            direction,
+          };
         }
         if (note.volume != null) {
           note.volume = Math.max(
