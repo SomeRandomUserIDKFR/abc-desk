@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "abcjs": "^6.6.4",
+    "js-synthesizer": "^1.13.0",
     "jspdf": "^4.2.1"
   }
 }

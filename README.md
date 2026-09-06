@@ -38,6 +38,14 @@ is playback-only.
 
 `#violin` loads the default tune with `Inst: violin` preselected. It is a convenience
 preset and does not overwrite shared tunes.
+`#violin` uses the experimental player with the native violin instrument preset.
+With Humanization enabled, the experimental path adds violin-specific bow-cycle
+variation, register-aware response, contextual intonation drift, and softer slur
+re-attacks while retaining the underlying abcjs violin soundfont.
+
+`#musescore` is an opt-in comparison route that loads MuseScore General SF3
+through a FluidSynth WebAssembly backend. It requires downloading the soundfont
+on first use and is separate from the normal experimental player.
 
 ## Live site
 
