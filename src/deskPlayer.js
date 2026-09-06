@@ -280,23 +280,39 @@ export function createTestingPlayer({
 
   function attachVisualElements(noteEvents, tune) {
     const selectables = tune.getSelectableArray?.() ?? [];
+    const noteSelectables = selectables.filter(
+      (selectable) =>
+        selectable.absEl?.abcelem?.el_type === "note" && selectable.svgEl,
+    );
+    const used = new Set();
     for (const event of noteEvents) {
-      if (event.startChar == null || event.endChar == null) continue;
       const svgElements = selectables
         .filter((selectable) => {
           const abc = selectable.absEl?.abcelem;
           return (
             abc &&
+            selectable.svgEl &&
+            !used.has(selectable) &&
+            event.startChar != null &&
+            event.endChar != null &&
             abc.startChar < event.endChar &&
             abc.endChar > event.startChar &&
             abc.el_type === "note"
           );
         })
-        .map((selectable) => selectable.svgEl)
-        .filter(Boolean);
+        .map((selectable) => {
+          used.add(selectable);
+          return selectable.svgEl;
+        });
+      if (!svgElements.length) {
+        const fallback = noteSelectables.find((selectable) => !used.has(selectable));
+        if (fallback) {
+          used.add(fallback);
+          svgElements.push(fallback.svgEl);
+        }
+      }
       if (svgElements.length) event.elements = [svgElements];
     }
-
   }
 
   function connectRoom(
