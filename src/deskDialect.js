@@ -998,6 +998,8 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     }
   }
 
+  varyBowedStringDoubleStops(tracks, humanAmount);
+
   const pitchBuckets = new Map();
   for (const track of tracks) {
     for (const note of track) {
@@ -1168,6 +1170,24 @@ export function balanceHeldNotes(tracks, ctx = {}) {
             10,
             Math.min(118, Math.round(note.volume * phraseFactor * playerFactor)),
           );
+          if (isBowedStringInstrument(note.instrument)) {
+            const register = Math.max(0, Math.min(1, (Number(note.pitch) - 48) / 48));
+            const bridgePosition = stableSignedNoise(
+              `bow-bridge:${phraseProfile.seed}:${index}:${note.pitch}`,
+            );
+            const bowSpeed = stableSignedNoise(
+              `bow-speed:${phraseProfile.seed}:${index}:${note.pitch}`,
+            );
+            const engagement =
+              (bridgePosition * 0.035 + bowSpeed * 0.025) *
+              (0.55 + register * 0.45) *
+              humanAmount;
+            note.volume = Math.max(
+              10,
+              Math.min(118, Math.round(note.volume * (1 + engagement))),
+            );
+            note.bowEngagement = Math.round((0.5 + engagement) * 100) / 100;
+          }
         }
 
         if (gap > 0.025 && duration < 2) {
@@ -1221,9 +1241,13 @@ export function balanceHeldNotes(tracks, ctx = {}) {
             // Vary the apparent vibrato rate and bow contact so sustained notes
             // do not repeat the same perfectly even sampled-sustain motion.
             note.cents +=
-              Math.sin(index * (0.72 + vibratoRateVariation * 0.12) + phraseProfile.breathPhase) *
+              Math.sin(
+                index * (0.72 + vibratoRateVariation * 0.12) +
+                  duration * (1.8 + vibratoRateVariation * 0.45) +
+                  phraseProfile.breathPhase,
+              ) *
               vibratoDepth *
-              0.16 *
+              0.24 *
               vibratoBuild;
             note.bowContact = Math.round(
               (0.5 + vibratoDepthVariation * 0.12 + vibratoRateVariation * 0.08) * 100,
@@ -1383,6 +1407,45 @@ function applyBowedStringArticulation(tracks, humanAmount) {
             ),
           );
         }
+      }
+    }
+  }
+}
+
+function varyBowedStringDoubleStops(tracks, humanAmount) {
+  if (humanAmount <= 0) return;
+  const buckets = new Map();
+  for (const track of tracks) {
+    for (const note of track) {
+      if (
+        note.cmd !== "note" ||
+        note.pitch == null ||
+        note.start == null ||
+        !isBowedStringInstrument(note.instrument)
+      ) {
+        continue;
+      }
+      const key = Math.round(note.start * 64);
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(note);
+    }
+  }
+
+  for (const notes of buckets.values()) {
+    const distinctPitches = new Set(notes.map((note) => Number(note.pitch)));
+    if (distinctPitches.size < 2) continue;
+    for (const note of notes) {
+      const separation = stableSignedNoise(
+        `double-stop:${note.start}:${note.pitch}:${note.instrument || ""}`,
+      );
+      note.cents = Math.round(
+        ((Number(note.cents) || 0) + separation * 2.4 * humanAmount) * 10,
+      ) / 10;
+      if (note.volume != null) {
+        note.volume = Math.max(
+          10,
+          Math.min(118, Math.round(note.volume * (1 + separation * 0.018 * humanAmount))),
+        );
       }
     }
   }
