@@ -1159,19 +1159,30 @@ export function balanceHeldNotes(tracks, ctx = {}) {
           playerCount > 1
             ? (playerNoise * 0.003 + breath * phraseProfile.timingBreath) * humanAmount
             : 0;
-        const timingOffset = trackTimingOffset + playerTiming;
+        const lowStringResponse =
+          isSlowResponseBowedString(note.instrument)
+            ? (0.0025 + stableUnitNoise(`low-string-latency:${trackIndex}:${index}`) * 0.005) *
+              humanAmount
+            : 0;
+        const timingOffset = trackTimingOffset + playerTiming + lowStringResponse;
         note.start = Math.max(0, note.start + timingOffset);
         note.end = Math.max(note.start + 0.01, note.end + timingOffset);
 
         if (note.volume != null) {
           const phraseFactor =
             (0.91 + arc * phraseProfile.arcDepth * humanAmount) * expressionArc;
+          const expressionNoise = stableSignedNoise(
+            `expression-lane:${phraseProfile.seed}:${index}:${note.start}:${note.pitch}`,
+          );
           const playerFactor =
             1 + playerNoise * Math.min(0.06, (playerCount - 1) * 0.006) * humanAmount;
+          const expressionFactor =
+            phraseFactor * (1 + expressionNoise * 0.018 * humanAmount);
           note.volume = Math.max(
             10,
-            Math.min(118, Math.round(note.volume * phraseFactor * playerFactor)),
+            Math.min(118, Math.round(note.volume * expressionFactor * playerFactor)),
           );
+          note.expressionCurve = Math.round(expressionFactor * 1000) / 1000;
           if (isBowedStringInstrument(note.instrument)) {
             const register = Math.max(0, Math.min(1, (Number(note.pitch) - 48) / 48));
             const bridgePosition = stableSignedNoise(
@@ -1734,6 +1745,11 @@ function isBowedStringInstrument(instrument) {
     /^synth-strings(?:-1|-2)?$/.test(name) ||
     name === "strings"
   );
+}
+
+function isSlowResponseBowedString(instrument) {
+  const name = normalizeInstrumentName(instrument);
+  return name === "cello" || name === "contrabass" || name === "double-bass";
 }
 
 function normalizeInstrumentName(instrument) {
