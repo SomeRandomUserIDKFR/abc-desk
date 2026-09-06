@@ -27,6 +27,7 @@ the experimental major-expansion route:
 http://localhost:5173/
 http://localhost:5173/#oldframework
 http://localhost:5173/#testingframework
+http://localhost:5173/#violin
 ```
 
 This route uses the real abcjs soundfont renderer with a small experimental test clock,
@@ -34,6 +35,8 @@ so instrument, tone, and Human settings remain audible while event counts and du
 are exposed. The legacy player remains available under `#oldframework`. WAV export
 uses the same experimental Human/performance processing; the live Web Audio Room effect
 is playback-only.
+
+`#violin` uses the experimental player with the native violin instrument preset.
 
 ## Live site
 
