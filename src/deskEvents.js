@@ -32,6 +32,15 @@ export function normalizePerformanceTracks(tracks) {
         bowEngagement: finiteNumber(event.bowEngagement),
         bowContact: finiteNumber(event.bowContact),
         bowFriction: finiteNumber(event.bowFriction),
+        bowEnvelope: event.bowEnvelope
+          ? {
+              attack: finiteNumber(event.bowEnvelope.attack),
+              sustain: finiteNumber(event.bowEnvelope.sustain),
+              release: finiteNumber(event.bowEnvelope.release),
+            }
+          : null,
+        vibratoRate: finiteNumber(event.vibratoRate),
+        vibratoDepth: finiteNumber(event.vibratoDepth),
         envelope: {
           attack: event.endType === "tenuto" ? 0.02 : 0.008,
           release: event.endType === "tenuto" ? 0.08 : 0.035,

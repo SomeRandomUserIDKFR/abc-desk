@@ -1184,11 +1184,24 @@ export function balanceHeldNotes(tracks, ctx = {}) {
               (bridgePosition * 0.035 + bowSpeed * 0.025) *
               (0.55 + register * 0.45) *
               humanAmount;
+            const attack = Math.max(
+              0.004,
+              Math.min(0.06, 0.012 + (1 - register) * 0.012 + bowSpeed * 0.004),
+            );
+            const release = Math.max(
+              0.018,
+              Math.min(0.12, 0.045 + register * 0.025 + bridgePosition * 0.01),
+            );
             note.volume = Math.max(
               10,
               Math.min(118, Math.round(note.volume * (1 + engagement))),
             );
             note.bowEngagement = Math.round((0.5 + engagement) * 100) / 100;
+            note.bowEnvelope = {
+              attack: Math.round(attack * 1000) / 1000,
+              sustain: Math.round((1 + engagement * 0.8) * 1000) / 1000,
+              release: Math.round(release * 1000) / 1000,
+            };
           }
         }
 
@@ -1254,6 +1267,10 @@ export function balanceHeldNotes(tracks, ctx = {}) {
             note.bowContact = Math.round(
               (0.5 + vibratoDepthVariation * 0.12 + vibratoRateVariation * 0.08) * 100,
             ) / 100;
+            note.vibratoRate = Math.round(
+              (0.72 + vibratoRateVariation * 0.12) * 100,
+            ) / 100;
+            note.vibratoDepth = Math.round(vibratoDepth * vibratoBuild * 10) / 10;
           }
           if (isBowedStringInstrument(note.instrument) && Number(note.pitch) >= 79) {
             const registerFactor = Math.min(1, (Number(note.pitch) - 79) / 24);
