@@ -29,6 +29,9 @@ export function normalizePerformanceTracks(tracks) {
         gap: finiteNumber(event.gap),
         endType: event.endType,
         articulation: normalizeArticulation(event.articulation ?? event.endType),
+        bowEngagement: finiteNumber(event.bowEngagement),
+        bowContact: finiteNumber(event.bowContact),
+        bowFriction: finiteNumber(event.bowFriction),
         envelope: {
           attack: event.endType === "tenuto" ? 0.02 : 0.008,
           release: event.endType === "tenuto" ? 0.08 : 0.035,

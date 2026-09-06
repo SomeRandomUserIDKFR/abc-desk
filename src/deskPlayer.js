@@ -215,6 +215,7 @@ export function createTestingPlayer({
       currentAudioParams?.callbackContext?.distance,
       currentAudioParams?.callbackContext?.players,
       currentAudioParams?.pan,
+      currentAudioParams?.callbackContext,
     );
     cursorControl.onStart();
     pausedSeconds = 0;
@@ -296,7 +297,14 @@ export function createTestingPlayer({
 
   }
 
-  function connectRoom(nextSynth, room, distance = 0.5, players = 1, voicePans = []) {
+  function connectRoom(
+    nextSynth,
+    room,
+    distance = 0.5,
+    players = 1,
+    voicePans = [],
+    performanceContext = {},
+  ) {
     if (!nextSynth.directSource?.length) return;
     const context = nextSynth.directSource[0].context;
     const input = context.createGain();
@@ -361,6 +369,7 @@ export function createTestingPlayer({
       const playerGain = context.createGain();
       const playerPan = context.createStereoPanner();
       const playerTone = context.createBiquadFilter();
+      const bowTexture = context.createBiquadFilter();
       const variation = Math.min(0.08, (playerCount - 1) * 0.012);
       // Keep larger sections full without letting layered replicas dominate.
       const ensembleScale = 1 / Math.sqrt(playerCount);
@@ -370,6 +379,21 @@ export function createTestingPlayer({
       playerTone.frequency.value = 2100 + Math.sin((index + 1) * 1.73) * 260;
       playerTone.Q.value = 0.65;
       playerTone.gain.value = Math.sin((index + 1) * 2.91) * 1.15;
+      const humanAmount = Math.max(
+        0,
+        Math.min(1,         Number(performanceContext?.humanize?.amount ?? 0) * 2),
+      );
+      const bowed =
+        performanceContext?.forceInstrument === "violin" ||
+        performanceContext?.forceInstrument === "viola" ||
+        performanceContext?.forceInstrument === "cello" ||
+        performanceContext?.forceInstrument === "contrabass";
+      bowTexture.type = "peaking";
+      bowTexture.frequency.value = 2800 + Math.sin((index + 1) * 1.37) * 220;
+      bowTexture.Q.value = 0.7;
+      bowTexture.gain.value = bowed
+        ? (0.8 + Math.sin((index + 1) * 2.41) * 0.35) * humanAmount
+        : 0;
       const sectionWidth = playerCount > 1
         ? Math.min(0.78, 0.34 + playerCount * 0.035)
         : 1;
@@ -380,7 +404,12 @@ export function createTestingPlayer({
             ? (index / (nextSynth.directSource.length - 1) * 2 - 1) * sectionWidth
             : 0;
       playerPan.pan.value = stagePosition * Math.max(0.35, spacing);
-      source.connect(playerGain).connect(playerTone).connect(playerPan).connect(input);
+      source
+        .connect(playerGain)
+        .connect(playerTone)
+        .connect(bowTexture)
+        .connect(playerPan)
+        .connect(input);
     });
     roomBus = { input };
   }
