@@ -264,6 +264,7 @@ export function createTestingPlayer({
   function invalidate() {
     clearTimers();
     synth?.stop();
+    roomBus?.roomNoise?.stop?.();
     roomBus?.input.disconnect();
     roomBus = null;
     synth = null;
@@ -313,6 +314,7 @@ export function createTestingPlayer({
     const roomProfile = room ?? { decay: 0.1, damping: 0.4, mix: 0 };
     const warmth = context.createBiquadFilter();
     const presence = context.createBiquadFilter();
+    const air = context.createBiquadFilter();
     const preDelay = context.createDelay(0.2);
     const wetFilter = context.createBiquadFilter();
     const convolver = context.createConvolver();
@@ -344,10 +346,13 @@ export function createTestingPlayer({
     presence.frequency.value = 4200;
     presence.Q.value = 0.8;
     presence.gain.value = -2.5;
-    input.connect(warmth).connect(presence);
-    presence.connect(dry).connect(context.destination);
+    air.type = "highshelf";
+    air.frequency.value = 7200;
+    air.gain.value = Math.min(2.2, 0.8 + roomMix * 4.5);
+    input.connect(warmth).connect(presence).connect(air);
+    air.connect(dry).connect(context.destination);
     if (room?.mix > 0) {
-      presence.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(context.destination);
+      air.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(context.destination);
     }
     if (roomMix > 0) {
       for (const reflection of reflections) {
@@ -361,9 +366,22 @@ export function createTestingPlayer({
         (1 - spacing * 0.22) *
         Math.min(1.2, playerCount / 4);
       reflectionPan.pan.value = reflection.pan * (room?.width ?? 0.6) * Math.min(1, spacing + 0.2);
-      input.connect(delay).connect(reflectionGain).connect(reflectionPan).connect(context.destination);
+      air.connect(delay).connect(reflectionGain).connect(reflectionPan).connect(context.destination);
       }
     }
+    const roomNoise = context.createBufferSource();
+    const roomNoiseFilter = context.createBiquadFilter();
+    const roomNoiseGain = context.createGain();
+    roomNoise.buffer = createRoomNoiseBuffer(context, roomProfile);
+    roomNoise.loop = true;
+    roomNoiseFilter.type = "highpass";
+    roomNoiseFilter.frequency.value = 4200;
+    roomNoiseFilter.Q.value = 0.25;
+    roomNoiseGain.gain.value = roomMix > 0
+      ? Math.min(0.002, 0.00035 + roomMix * 0.0012)
+      : 0;
+    roomNoise.connect(roomNoiseFilter).connect(roomNoiseGain).connect(context.destination);
+    roomNoise.start();
     nextSynth.directSource.forEach((source, index) => {
       source.disconnect();
       const playerGain = context.createGain();
@@ -411,7 +429,7 @@ export function createTestingPlayer({
         .connect(playerPan)
         .connect(input);
     });
-    roomBus = { input };
+    roomBus = { input, roomNoise };
   }
 
 }
@@ -462,6 +480,17 @@ function fillRoomImpulse(impulse, room) {
       const highFrequencyLoss = Math.exp(-t * (1.8 + damping * 6.2));
       data[index] = (noise * 0.78 + shimmer * 0.22) * envelope * highFrequencyLoss;
     }
+
+    function createRoomNoiseBuffer(context, room) {
+      const length = Math.max(1, Math.floor(context.sampleRate * 2));
+      const buffer = context.createBuffer(1, length, context.sampleRate);
+      const data = buffer.getChannelData(0);
+      const seed = hashString(room.name ?? room.label ?? "room");
+      for (let index = 0; index < length; index++) {
+        data[index] = stableNoise(seed, index) * 0.18;
+      }
+      return buffer;
+    }
   }
 }
 
@@ -499,6 +528,9 @@ async function renderRoomWav(audioBuffer, room) {
   const wet = context.createGain();
   const warmth = context.createBiquadFilter();
   const presence = context.createBiquadFilter();
+  const air = context.createBiquadFilter();
+  const roomNoiseFilter = context.createBiquadFilter();
+  const roomNoiseGain = context.createGain();
   const preDelay = context.createDelay(0.2);
   const wetFilter = context.createBiquadFilter();
   const convolver = context.createConvolver();
@@ -518,9 +550,21 @@ async function renderRoomWav(audioBuffer, room) {
   presence.frequency.value = 4200;
   presence.Q.value = 0.8;
   presence.gain.value = -2.5;
-  input.connect(warmth).connect(presence);
-  presence.connect(dry).connect(context.destination);
-  presence.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(context.destination);
+  air.type = "highshelf";
+  air.frequency.value = 7200;
+  air.gain.value = Math.min(2.2, 0.8 + room.mix * 4.5);
+  input.connect(warmth).connect(presence).connect(air);
+  air.connect(dry).connect(context.destination);
+  air.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(context.destination);
+  const roomNoise = context.createBufferSource();
+  roomNoise.buffer = createRoomNoiseBuffer(context, room);
+  roomNoise.loop = true;
+  roomNoiseFilter.type = "highpass";
+  roomNoiseFilter.frequency.value = 4200;
+  roomNoiseFilter.Q.value = 0.25;
+  roomNoiseGain.gain.value = Math.min(0.002, 0.00035 + room.mix * 0.0012);
+  roomNoise.connect(roomNoiseFilter).connect(roomNoiseGain).connect(context.destination);
+  roomNoise.start();
   for (const reflection of [
     { delay: 0.011, level: 0.52, pan: -0.72 },
     { delay: 0.019, level: 0.37, pan: 0.64 },
