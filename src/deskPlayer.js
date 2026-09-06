@@ -216,6 +216,7 @@ export function createTestingPlayer({
       currentAudioParams?.callbackContext?.players,
       currentAudioParams?.pan,
       currentAudioParams?.callbackContext,
+      events,
     );
     cursorControl.onStart();
     pausedSeconds = 0;
@@ -305,6 +306,7 @@ export function createTestingPlayer({
     players = 1,
     voicePans = [],
     performanceContext = {},
+    noteEvents = [],
   ) {
     if (!nextSynth.directSource?.length) return;
     const context = nextSynth.directSource[0].context;
@@ -429,6 +431,14 @@ export function createTestingPlayer({
         .connect(playerPan)
         .connect(input);
     });
+    scheduleBowContactTexture(
+      context,
+      input,
+      noteEvents,
+      secondsPerWholeNote,
+      performanceContext,
+      roomMix,
+    );
     roomBus = { input, roomNoise };
   }
 
@@ -491,6 +501,74 @@ function createRoomNoiseBuffer(context, room, seconds = 2) {
   const seed = hashString(room.name ?? room.label ?? "room");
   for (let index = 0; index < length; index++) {
     data[index] = stableNoise(seed, index) * 0.18;
+  }
+
+  function scheduleBowContactTexture(
+    context,
+    destination,
+    noteEvents,
+    secondsPerWholeNote,
+    performanceContext,
+    roomMix,
+  ) {
+    const instrument = performanceContext?.forceInstrument;
+    if (
+      !["violin", "viola", "cello", "contrabass"].includes(instrument) ||
+      !noteEvents?.length
+    ) {
+      return;
+    }
+    const humanAmount = Math.max(
+      0,
+      Math.min(1, Number(performanceContext?.humanize?.amount ?? 0) * 2),
+    );
+    if (!humanAmount) return;
+    const now = context.currentTime + 0.015;
+    const noiseBuffer = createBowNoiseBuffer(context);
+    for (const note of noteEvents) {
+      const start = Math.max(0, Number(note.start) || 0);
+      const duration = Math.max(0.01, Number(note.duration) || 0.05);
+      const friction = Math.abs(Number(note.bowFriction) || 0);
+      const portamento = note.portamento ? 1 : 0;
+      const intensity = Math.min(
+        1,
+        (0.22 + friction * 0.28 + portamento * 0.22) * humanAmount,
+      );
+      if (intensity < 0.04) continue;
+      const source = context.createBufferSource();
+      const filter = context.createBiquadFilter();
+      const gain = context.createGain();
+      const startTime = now + start * secondsPerWholeNote;
+      const attack = Math.min(0.025, duration * secondsPerWholeNote * 0.18);
+      const release = Math.min(0.08, duration * secondsPerWholeNote * 0.28);
+      source.buffer = noiseBuffer;
+      filter.type = "bandpass";
+      filter.frequency.value = 4200 + (Number(note.pitch) || 60) * 18;
+      filter.Q.value = 0.7;
+      gain.gain.setValueAtTime(0.00001, startTime);
+      gain.gain.linearRampToValueAtTime(
+        0.0012 * intensity * (1 + roomMix * 0.35),
+        startTime + attack,
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        0.00001,
+        startTime + Math.max(attack + 0.01, Math.min(0.12, release + 0.04)),
+      );
+      source.connect(filter).connect(gain).connect(destination);
+      source.start(startTime);
+      source.stop(startTime + Math.min(0.16, Math.max(0.06, release + 0.05)));
+    }
+  }
+
+  function createBowNoiseBuffer(context) {
+    const length = Math.max(1, Math.floor(context.sampleRate * 0.18));
+    const buffer = context.createBuffer(1, length, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < length; index++) {
+      const fade = Math.min(1, index / (length * 0.08), (length - index) / (length * 0.45));
+      data[index] = stableNoise(0x5f3759df, index) * Math.max(0, fade) * 0.3;
+    }
+    return buffer;
   }
   return buffer;
 }
