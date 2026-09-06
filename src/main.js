@@ -12,6 +12,7 @@ import { parseParts } from "./deskParts.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
 import { createDeskPlayer, createTestingPlayer } from "./deskPlayer.js";
+import { createMuseScorePlayer } from "./museScorePlayer.js";
 import songTxt from "../Song.txt?raw";
 
 const SAMPLES = {
@@ -161,6 +162,7 @@ const frameworkHash = window.location.hash.toLowerCase();
 const oldFramework = frameworkHash === "#oldframework";
 const testingFramework = frameworkHash === "#testingframework";
 const violinPreset = frameworkHash === "#violin";
+const museScoreFramework = frameworkHash === "#musescore";
 const experimentalFramework = !oldFramework;
 const DEFAULT_ABC =
   shared ||
@@ -220,7 +222,7 @@ app.innerHTML = `
         <div id="audio"></div>
       </div>
       ${
-        experimentalFramework
+        experimentalFramework && !museScoreFramework
           ? `<div id="testing-panel" class="lint-panel" aria-label="Player experiment">
               <div class="lint-header"><h2 class="panel-title">Player experiment</h2><span class="lint-count">${testingFramework ? "#testingframework" : violinPreset ? "#violin" : "default"}</span></div>
               <p id="testing-metrics" class="lint-empty">Render a tune to inspect normalized playback events.</p>
@@ -583,7 +585,12 @@ function renderLint(issues) {
 }
 
 function initSynth() {
-  player = experimentalFramework
+  player = museScoreFramework
+    ? createMuseScorePlayer({
+        abcjs,
+        audioSelector: "#audio",
+      })
+    : experimentalFramework
     ? createTestingPlayer({
         abcjs,
         audioSelector: "#audio",
