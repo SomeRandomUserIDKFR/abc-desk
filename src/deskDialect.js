@@ -1294,6 +1294,12 @@ export function balanceHeldNotes(tracks, ctx = {}) {
               (0.72 + vibratoRateVariation * 0.12) * 100,
             ) / 100;
             note.vibratoDepth = Math.round(vibratoDepth * vibratoBuild * 10) / 10;
+            note.vibratoCurve = [
+              { time: 0, depth: 0 },
+              { time: 0.28, depth: 0.42 },
+              { time: 0.62, depth: 0.82 },
+              { time: 1, depth: 1 },
+            ];
           }
           if (isBowedStringInstrument(note.instrument) && Number(note.pitch) >= 79) {
             const registerFactor = Math.min(1, (Number(note.pitch) - 79) / 24);
@@ -2021,6 +2027,7 @@ export function deskAudioParams(meta) {
       distance: meta.distance,
       players: meta.players,
       adaptiveStrings: false,
+      violinVibrato: forceInstrument === "violin",
     },
     pan,
     sequenceCallback: (tracks, ctx) =>

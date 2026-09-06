@@ -42,6 +42,12 @@ export function normalizePerformanceTracks(tracks) {
           : null,
         vibratoRate: finiteNumber(event.vibratoRate),
         vibratoDepth: finiteNumber(event.vibratoDepth),
+        vibratoCurve: Array.isArray(event.vibratoCurve)
+          ? event.vibratoCurve.map((point) => ({
+              time: finiteNumber(point.time) ?? 0,
+              depth: finiteNumber(point.depth) ?? 0,
+            }))
+          : null,
         expressionCurve: finiteNumber(event.expressionCurve),
         portamento: event.portamento
           ? {

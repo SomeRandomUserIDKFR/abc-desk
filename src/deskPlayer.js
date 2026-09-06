@@ -339,6 +339,11 @@ export function createTestingPlayer({
     if (!nextSynth.directSource?.length) return;
     const context = nextSynth.directSource[0].context;
     const input = context.createGain();
+    const violinVibrato = performanceContext?.violinVibrato === true;
+    const vibratoInput = violinVibrato ? context.createGain() : null;
+    const vibratoDelay = violinVibrato ? context.createDelay(0.05) : null;
+    const vibratoLfo = violinVibrato ? context.createOscillator() : null;
+    const vibratoDepth = violinVibrato ? context.createGain() : null;
     const dry = context.createGain();
     const wet = context.createGain();
     const roomProfile = room ?? { decay: 0.1, damping: 0.4, mix: 0 };
@@ -457,8 +462,22 @@ export function createTestingPlayer({
         .connect(playerTone)
         .connect(bowTexture)
         .connect(playerPan)
-        .connect(input);
+        .connect(vibratoInput ?? input);
     });
+    if (vibratoInput && vibratoDelay && vibratoLfo && vibratoDepth) {
+      vibratoDelay.delayTime.value = 0.012;
+      vibratoDepth.gain.value = 0.00008;
+      vibratoLfo.frequency.value = 5.2;
+      vibratoLfo.connect(vibratoDepth).connect(vibratoDelay.delayTime);
+      vibratoInput.connect(vibratoDelay).connect(input);
+      scheduleViolinVibrato(
+        context,
+        vibratoDepth.gain,
+        noteEvents,
+        secondsPerWholeNote,
+      );
+      vibratoLfo.start();
+    }
     scheduleBowContactTexture(
       context,
       input,
@@ -467,9 +486,35 @@ export function createTestingPlayer({
       performanceContext,
       roomMix,
     );
-    roomBus = { input, roomNoise };
+    roomBus = { input, roomNoise, vibratoInput, vibratoDelay, vibratoLfo };
   }
 
+}
+
+function scheduleViolinVibrato(context, depthParam, noteEvents, wholeNoteSeconds) {
+  const now = context.currentTime;
+  depthParam.cancelScheduledValues(now);
+  depthParam.setValueAtTime(0.00008, now);
+  for (const event of noteEvents) {
+    const start = now + Math.max(0, Number(event.start) || 0) * wholeNoteSeconds;
+    const duration = Math.max(0.08, eventDuration(event) * wholeNoteSeconds);
+    const depth = Math.max(0, Math.min(1, (Number(event.vibratoDepth) || 0) / 12));
+    const curve = event.vibratoCurve?.length
+      ? event.vibratoCurve
+      : [
+          { time: 0, depth: 0 },
+          { time: 0.35, depth: 0.45 },
+          { time: 1, depth: 1 },
+        ];
+    depthParam.setValueAtTime(0.00008, start);
+    for (const point of curve) {
+      const pointTime = start + Math.max(0, Math.min(1, point.time)) * duration;
+      const pointDepth =
+        0.00008 + depth * 0.0008 * Math.max(0, Math.min(1, point.depth));
+      depthParam.linearRampToValueAtTime(pointDepth, pointTime);
+    }
+    depthParam.linearRampToValueAtTime(0.00008, start + duration);
+  }
 }
 
 function groupSimultaneousEvents(noteEvents) {
