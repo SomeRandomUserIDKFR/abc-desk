@@ -364,29 +364,6 @@ function safeFileStem(raw) {
   return base || "untitled";
 }
 
-function presetInstrument(source, instrument) {
-  const lines = String(source).split(/\r?\n/);
-  const instrumentLine = new RegExp("^\\s*Inst\\s*:", "i");
-  const midiLine = new RegExp("^\\s*%%MIDI\\s+program\\b", "i");
-  let replaced = false;
-  const result = lines.map((line) => {
-    if (instrumentLine.test(line)) {
-      replaced = true;
-      return `Inst: ${instrument}`;
-    }
-    if (midiLine.test(line)) {
-      replaced = true;
-      return "%%MIDI program 40";
-    }
-    return line;
-  });
-  if (!replaced) {
-    const insertAt = result.findIndex((line) => /^\s*K\s*:/i.test(line));
-    result.splice(insertAt >= 0 ? insertAt : 0, 0, `Inst: ${instrument}`);
-  }
-  return result.join("\n");
-}
-
 function tuneFileStem() {
   return safeFileStem(lastVisualObj?.metaText?.title ?? "untitled");
 }
