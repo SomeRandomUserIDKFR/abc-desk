@@ -23,59 +23,38 @@ const TRANS_LINE = /^(?:Trans|Transpose)\s*:\s*(-?\d+)\s*$/i;
 export function formatForDesk(source) {
   if (/^\s*Part\s*:/im.test(source)) return null;
   const lines = source.split(/\r?\n/);
-  const voices = new Map();
-  let currentVoice = null;
   const header = [];
-  let musicStarted = false;
+  const voices = [];
+  let current = null;
 
   for (const line of lines) {
     const declaration = line.match(/^\s*V\s*:\s*(\S+)(.*)$/i);
     if (declaration) {
-      musicStarted = true;
-      const id = declaration[1];
-      const attributes = declaration[2];
-      voices.set(id, {
-        id,
-        name: readVoiceAttribute(attributes, "name") || `Voice ${id}`,
-        clef: readVoiceAttribute(attributes, "clef"),
-        lines: voices.get(id)?.lines ?? [],
-      });
-      currentVoice = id;
-      continue;
-    }
-    if (!musicStarted) {
-      if (!/^\s*%/.test(line)) header.push(line);
-      continue;
-    }
-    const marked = [...line.matchAll(/\[V\s*:\s*(\S+)\]\s*/gi)];
-    if (marked.length) {
-      for (let index = 0; index < marked.length; index++) {
-        const voice = voices.get(marked[index][1]);
-        if (!voice) continue;
-        const start = marked[index].index + marked[index][0].length;
-        const end = marked[index + 1]?.index ?? line.length;
-        voice.lines.push(line.slice(start, end).trim());
-      }
-      currentVoice = null;
-    } else if (currentVoice && line.trim()) {
-      voices.get(currentVoice)?.lines.push(line);
+      current = {
+        name: readVoiceAttribute(declaration[2], "name") || `Voice ${declaration[1]}`,
+        clef: readVoiceAttribute(declaration[2], "clef"),
+        lines: [],
+      };
+      voices.push(current);
+    } else if (!current) {
+      if (!/^\s*%(?!%MIDI)/i.test(line)) header.push(line);
+    } else if (line.trim()) {
+      current.lines.push(line);
     }
   }
 
-  if (!voices.size) {
-    const fields = extractFields(source);
+  const fields = extractFields(header.join("\n") || source);
+  if (!voices.length) {
     const keyIndex = lines.findIndex((line) => /^\s*K\s*:/i.test(line));
-    if (keyIndex < 0) return null;
-    const music = lines.slice(keyIndex + 1).filter((line) => line.trim() && !/^\s*%/.test(line)).join(" ");
+    const music = keyIndex >= 0
+      ? lines.slice(keyIndex + 1)
+        .filter((line) => line.trim() && !/^\s*%/.test(line) && !/^\s*[A-Za-z][A-Za-z0-9]*:/.test(line))
+        .join(" ")
+      : "";
     if (!music.includes("&")) return null;
-    voices.set("1", {
-      id: "1",
-      name: fields.T ? `${fields.T} voice` : "Voice 1",
-      clef: "",
-      lines: [music],
-    });
+    voices.push({ name: fields.T ? `${fields.T} voice` : "Voice 1", clef: "", lines: [sanitizeMusic(music)] });
   }
-  const fields = extractFields(header.length ? header.join("\n") : source);
+
   const sharedHeader = [
     `X:${fields.X || 1}`,
     fields.T ? `T:${fields.T}` : null,
@@ -84,19 +63,21 @@ export function formatForDesk(source) {
     fields.L ? `L:${fields.L}` : null,
     fields.Q ? `Q:${fields.Q}` : null,
     fields.K ? `K:${fields.K}` : null,
+    readMidiProgramLine(header.join("\n")),
   ].filter(Boolean);
   const parts = [];
-  for (const voice of voices.values()) {
-    const instrument = fields.Inst || inferInstrument(voice.name, voice.clef);
-    const music = voice.lines.filter(Boolean).join("\n");
-    const overlays = splitOverlayVoices(music, fields.L);
+  const sharedProgram = readMidiProgram(header.join("\n"));
+  for (const voice of voices) {
+    const instrument = fields.Inst || instrumentForProgram(sharedProgram) ||
+      inferPartInstrument(voice.name, voice.clef);
+    const overlays = splitOverlayVoices(sanitizeMusic(voice.lines.join("\n")), fields.L);
     overlays.forEach((body, index) => {
       const name = overlays.length > 1 ? `${voice.name} voice ${index + 1}` : voice.name;
       parts.push([
         `Part: ${name}`,
-        `Inst: ${instrument}`,
+        sharedProgram == null ? `Inst: ${instrument}` : null,
         ...sharedHeader,
-        body,
+        wrapMusicLines(makeRestsVisible(body)),
       ].filter(Boolean).join("\n"));
     });
   }
@@ -107,31 +88,39 @@ function splitOverlayVoices(music, lengthField) {
   if (!music.includes("&")) return [music];
   const unit = parseLengthUnit(lengthField);
   const voices = [];
-  let current = "";
-  const flushBar = (barline = "") => {
-    const segments = current.split("&").map((segment) => segment.trim()).filter(Boolean);
-    if (!segments.length) {
-      current = "";
-      return;
-    }
-    while (voices.length < segments.length) voices.push([]);
-    const durations = segments.map((segment) => abcDurationUnits(segment, unit));
+  const barTargets = [];
+  let bar = "";
+  const flush = (barline = "") => {
+    const segments = bar.split("&").map((value) => value.trim()).filter(Boolean);
+    if (!segments.length) return;
+    const durations = segments.map((value) => abcDurationUnits(value, unit));
     const target = Math.max(...durations);
+    barTargets.push({ duration: target, barline });
+    while (voices.length < segments.length) {
+      voices.push(
+        barTargets
+          .slice(0, -1)
+          .map((barInfo) => `${formatRest(barInfo.duration, unit)}${barInfo.barline}`.trim()),
+      );
+    }
+    const fields = [...new Set(
+      segments.join(" ").match(/\[[A-Za-z][A-Za-z0-9]*:[^\]]*\]/g) || [],
+    )].join(" ");
     segments.forEach((segment, index) => {
-      const padding = target - durations[index];
-      voices[index].push(`${segment}${formatRest(padding, unit)}${barline}`.trim());
+      const sharedFields = fields && !segment.includes(fields) ? `${fields} ` : "";
+      voices[index].push(`${sharedFields}${segment}${formatRest(target - durations[index], unit)}${barline}`.trim());
     });
     for (let index = segments.length; index < voices.length; index++) {
       voices[index].push(`${formatRest(target, unit)}${barline}`.trim());
     }
-    current = "";
-  };
 
+    bar = "";
+  };
   for (const piece of music.split(/(\|)/)) {
-    if (piece === "|") flushBar("|");
-    else current += `${current ? " " : ""}${piece}`;
+    if (piece === "|") flush("|");
+    else bar += `${bar ? " " : ""}${piece}`;
   }
-  flushBar();
+  flush();
   return voices.map((voice) => voice.join(" ").trim()).filter(Boolean);
 }
 
@@ -141,27 +130,97 @@ function parseLengthUnit(value) {
 }
 
 function abcDurationUnits(text, unit) {
-  let total = 0;
-  const tokens = text.match(/(?:\[[^\]]+\]|[_=^]?[A-Ga-gz][,']*)(?:\d+)?(?:\/\d*)?/g) || [];
-  for (const token of tokens) {
+  const tokens = text
+    .replace(/%.*$/gm, "")
+    .replace(/![^!]*!/g, "")
+    .replace(/\[[A-Za-z][A-Za-z0-9]*:[^\]]*\]/g, "")
+    .replace(/"[^"]*"/g, "")
+    .match(/(?:\[[^\]]+\]|[_=^]?[A-GGa-gxz][,']*)(?:\d+)?(?:\/\d*)?/g) || [];
+  return tokens.reduce((total, token) => {
+    if (token.startsWith("[")) {
+      const chordDurations = [...token.matchAll(/[_=^]?[A-Ga-g][,']*(\d+)?(?:\/(\d*))?/g)]
+        .map((match) => {
+          const numerator = Number(match[1] || 1);
+          const denominator = match[2] === "" ? 2 : Number(match[2] || 1);
+          return numerator / denominator;
+        });
+      return total + (Math.max(...chordDurations, 1) * unit);
+    }
     const suffix = token.match(/(\d+)?(?:\/(\d*))?$/);
     const numerator = Number(suffix?.[1] || 1);
     const denominator = suffix?.[2] === "" ? 2 : Number(suffix?.[2] || 1);
-    total += (numerator / denominator) * unit;
+    return total + (numerator / denominator) * unit;
+  }, 0);
+}
+
+function sanitizeMusic(music) {
+  return music
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !/^\s*%/.test(line) && !/^\s*[A-Za-z][A-Za-z0-9]*\s*:/.test(line))
+    .map((line) => line.replace(/%.*$/, ""))
+    .join(" ");
+}
+
+function makeRestsVisible(music) {
+  return music.replace(/(^|[\s|])x(?=(?:\d|\/|[\s|]|$))/gi, "$1z");
+}
+
+function wrapMusicLines(music) {
+  const pieces = music.split(/(\|)/);
+  const lines = [];
+  let line = "";
+  let bars = 0;
+  for (const piece of pieces) {
+    if (piece === "|") {
+      line = `${line.trim()}|`;
+      bars += 1;
+      if (bars >= 4 || line.length >= 96) {
+        lines.push(line.trim());
+        line = "";
+        bars = 0;
+      } else {
+        line += " ";
+      }
+    } else if (piece.trim()) {
+      line += `${piece.trim()} `;
+    }
   }
-  return total;
+  if (line.trim()) lines.push(line.trim());
+  return lines.join("\n");
 }
 
 function formatRest(duration, unit) {
-  const units = duration / unit;
+  const units = Math.round((duration / unit) * 16) / 16;
   if (units <= 0.001) return "";
-  const rounded = Math.round(units * 16) / 16;
-  if (Math.abs(rounded - Math.round(rounded)) < 0.001) {
-    return ` z${Math.max(1, Math.round(rounded))}`;
-  }
-  const denominator = 16;
-  const numerator = Math.round(rounded * denominator);
-  return ` z${numerator}/${denominator}`;
+  if (Number.isInteger(units)) return ` z${Math.max(1, units)}`;
+  return ` z${Math.round(units * 16)}/16`;
+}
+
+function readMidiProgram(text) {
+  const match = text.match(/^\s*%%\s*MIDI\s+program\s+(?:\d+\s+)?(\d+)\s*$/im);
+  return match ? Number(match[1]) : null;
+}
+
+function readMidiProgramLine(text) {
+  const program = readMidiProgram(text);
+  return program == null ? null : `%%MIDI program ${program}`;
+}
+
+function instrumentForProgram(program) {
+  return Number(program) === 99 ? "atmosphere" : Number(program) === 98 ? "crystal" : "";
+}
+
+function inferPartInstrument(name, clef = "") {
+  const value = `${name} ${clef}`.toLowerCase();
+  if (/double\s*bass|contrabass/.test(value)) return "contrabass";
+  if (/cello/.test(value)) return "cello";
+  if (/viola|alto/.test(value)) return "viola";
+  if (/violin|fiddle/.test(value)) return "violin";
+  return /bass/.test(value) ? "cello" : "violin";
+}
+
+function readVoiceAttribute(attributes, name) {
+  return attributes.match(new RegExp(`${name}\\s*=\\s*"([^"]+)"`, "i"))?.[1]?.trim() || "";
 }
 
 /**
@@ -200,10 +259,13 @@ export function parseParts(source) {
       if (trans) {
         current.transpose = Number(trans[1]);
       } else {
+        const instrument = line.trim().match(/^Inst:\s*(.+)$/i);
+        if (instrument) current.instrument = instrument[1].trim();
         const m = line.trim().match(/^M:\s*(.+)$/i);
         if (m) current.meter = m[1].trim();
         current.lines.push(line);
       }
+
     }
     offset += line.length + 1;
   }
@@ -221,12 +283,60 @@ export function parseParts(source) {
   return { isMultiPart: true, parts, assembledAbc, warnings };
 }
 
+export function updatePartMetadata(source, updates) {
+  const lines = source.split(/\r?\n/);
+  const firstPart = lines.findIndex((line) => /^\s*Part:\s*/i.test(line));
+  if (firstPart < 0) return source;
+  const output = lines.slice(0, firstPart);
+  const blocks = [];
+  let block = [];
+  for (const line of lines.slice(firstPart)) {
+    if (/^\s*Part:\s*/i.test(line) && block.length) {
+      blocks.push(block);
+      block = [];
+    }
+    block.push(line);
+  }
+  if (block.length) blocks.push(block);
+
+  blocks.forEach((partLines, index) => {
+    const update = updates[index] || {};
+    const existingInst = partLines.find((line) => /^\s*Inst\s*:/i.test(line))
+      ?.match(/^\s*Inst\s*:\s*(.+)$/i)?.[1]?.trim();
+    const midiProgram = readMidiProgram(partLines.join("\n"));
+    const effectiveInstrument = existingInst || instrumentForProgram(midiProgram);
+    const requestedInstrument = update.instrument?.trim();
+    const instrumentChanged =
+      requestedInstrument && requestedInstrument.toLowerCase() !== effectiveInstrument.toLowerCase();
+    partLines.forEach((line) => {
+      const partMatch = line.match(/^(\s*)Part:\s*(.+)$/i);
+      if (partMatch) {
+        output.push(update.name?.trim()
+          ? `${partMatch[1]}Part: ${update.name.trim()}`
+          : line);
+        if (instrumentChanged && !existingInst) {
+          output.push(`Inst: ${requestedInstrument}`);
+        }
+      } else if (instrumentChanged && /^\s*%%\s*MIDI\s+program\b/i.test(line)) {
+        return;
+      } else if (/^\s*Inst\s*:/i.test(line) && requestedInstrument) {
+        output.push(`Inst: ${requestedInstrument}`);
+      } else {
+        output.push(line);
+      }
+    });
+  });
+  return output.join("\n");
+}
+
 function finalizePart(partial) {
+  const body = partial.lines.join("\n").trim();
+  const program = readMidiProgram(body);
   return {
     name: partial.name,
     transpose: partial.transpose,
-    instrument: partial.instrument,
-    body: partial.lines.join("\n").trim(),
+    instrument: partial.instrument || instrumentForProgram(program) || undefined,
+    body,
     meter: partial.meter,
     start: partial.start,
   };
@@ -318,7 +428,7 @@ function extractFields(body) {
   /** @type {Record<string, string>} */
   const out = {};
   for (const line of body.split(/\r?\n/)) {
-    const m = line.match(/^([A-Za-z]):\s*(.*)$/);
+    const m = line.match(/^([A-Za-z][A-Za-z0-9]*):\s*(.*)$/);
     if (m && !out[m[1]]) out[m[1]] = m[2].trim();
   }
   return out;
@@ -339,18 +449,4 @@ function stripHeader(body) {
 
 function escapeQuotes(s) {
   return String(s).replace(/"/g, "'");
-}
-
-function readVoiceAttribute(attributes, name) {
-  const match = attributes.match(new RegExp(`${name}\\s*=\\s*"([^"]+)"`, "i"));
-  return match?.[1]?.trim() || "";
-}
-
-function inferInstrument(name, clef = "") {
-  const value = `${name} ${clef}`.toLowerCase();
-  if (/double\s*bass|contrabass/.test(value)) return "contrabass";
-  if (/cello/.test(value)) return "cello";
-  if (/viola|alto/.test(value)) return "viola";
-  if (/violin|fiddle/.test(value)) return "violin";
-  return /bass/.test(value) ? "cello" : "violin";
 }
