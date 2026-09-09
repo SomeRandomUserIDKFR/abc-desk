@@ -1839,20 +1839,6 @@ function stableSignedNoise(seed) {
   return stableUnitNoise(seed) * 2 - 1;
 }
 
-function violinBowCycle(note, duration, seed, amount) {
-  const pitch = Number(note.pitch);
-  const register = Number.isFinite(pitch)
-    ? Math.max(-1, Math.min(1, (pitch - 67) / 24))
-    : 0;
-  const bowLength = 0.55 + stableUnitNoise(`${seed}:bow-length`) * 0.35;
-  const bowPhase = stableUnitNoise(`${seed}:bow-phase`) * Math.PI * 2;
-  const cycle = Math.sin((duration / bowLength) * Math.PI * 1.6 + bowPhase);
-  const settling = duration > 0.3 ? Math.min(1, (duration - 0.3) / 1.4) : 0;
-  const pressure = cycle * 0.035 * settling;
-  const registerResponse = register * 0.012 * Math.min(1, duration * 2);
-  return 1 + (pressure + registerResponse) * amount;
-}
-
 function instrumentFamily(instrument) {
   const name = normalizeInstrumentName(instrument);
   if (!name) return "other";
