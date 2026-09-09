@@ -1331,7 +1331,15 @@ function applyHumanization(tracks, humanize) {
           // Alternating bow pressure adds a small attack/release irregularity.
           volumeFactor *= 1 + (bowDirection * 0.045 + bowPressureNoise * 0.06) * amount;
           if (isViolinInstrument(note.instrument)) {
+            const pitch = Number(note.pitch);
+            const lowRegister = pitch <= 74 ? (74 - pitch) / 22 : 0;
+            const lowRegisterBias = Math.min(1, Math.max(0, lowRegister));
+            // Lower violin notes need a slower, more grounded attack than the
+            // brighter mid/high register. This keeps the onset from reading as
+            // a generic MIDI string timbre.
             volumeFactor *= violinBowCycle(note, dur, seedBase, amount);
+            volumeFactor *= 1 - lowRegisterBias * (0.16 + amount * 0.14);
+            volumeFactor *= 1 + lowRegisterBias * 0.06 * amount;
           }
           if (mistakeNoise < amount * 0.06) {
             volumeFactor *= 0.9 + stableUnitNoise(`${seedBase}:bow-slip`) * 0.12;
@@ -1350,7 +1358,8 @@ function applyHumanization(tracks, humanize) {
           const pitch = Number(note.pitch);
           const interval = Number.isFinite(previousPitch) ? pitch - previousPitch : 0;
           const approach = interval > 0 ? -1 : interval < 0 ? 1 : 0;
-          const registerBias = pitch >= 79 ? -0.7 : pitch <= 55 ? 0.55 : 0;
+          const registerBias =
+            pitch >= 79 ? -0.7 : pitch <= 74 ? 0.9 : pitch <= 55 ? 0.55 : 0;
           cents += (approach * 1.8 + registerBias) * amount;
         }
         if (mistakeNoise < amount * 0.025) {
@@ -1684,7 +1693,7 @@ export function programToSoundfontName(program) {
  * Synth options derived from Desk meta.
  * Instrument comes from %%MIDI program in the ABC (Inst: compiles to that).
  * Do not pass options.program — it fights / shadows the standard directive.
- * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, room?: ReturnType<typeof resolveRoom>, midiProgram?: number, hasMultipleMidiPrograms?: boolean }} meta
+ * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, room?: ReturnType<typeof resolveRoom>, midiProgram?: number, hasMultipleMidiPrograms?: boolean, partPlayback?: Array<{ mute?: boolean, solo?: boolean, volume?: number }> }} meta
  */
 export function deskAudioParams(meta) {
   const program = meta.hasMultipleMidiPrograms
@@ -1698,6 +1707,7 @@ export function deskAudioParams(meta) {
     fadeLength: 320,
     callbackContext: {
       forceInstrument,
+      violinMotion: forceInstrument === "violin",
       sourceText: meta.sourceText,
       drum1: meta.drum1,
       drum2: meta.drum2,
@@ -1706,10 +1716,11 @@ export function deskAudioParams(meta) {
       room: meta.room,
       distance: meta.distance,
       players: meta.players,
+      partPlayback: meta.partPlayback,
     },
     pan,
     sequenceCallback: (tracks, ctx) =>
-      balanceHeldNotes(tracks, {
+    applyPartPlaybackControls(balanceHeldNotes(tracks, {
         forceInstrument: ctx?.forceInstrument ?? forceInstrument,
         sourceText: ctx?.sourceText ?? meta.sourceText,
         drum1: ctx?.drum1 ?? meta.drum1,
@@ -1719,13 +1730,29 @@ export function deskAudioParams(meta) {
         players: ctx?.players ?? meta.players,
         expressionExpansion: ctx?.expressionExpansion ?? false,
         experimentalPerformance: ctx?.experimentalPerformance ?? false,
-      }),
+        partPlayback: ctx?.partPlayback ?? meta.partPlayback,
+      }), ctx?.partPlayback),
   };
 
   // Shared default for EVERY voice/overlay startVoice. Without this, & overlays
   // keep piano when %%MIDI was only applied as a body event on voice 1.
   if (program != null) {
     options.program = program;
+  }
+
+  function applyPartPlaybackControls(tracks, controls = []) {
+    const activeSolo = controls.some((control) => control?.solo);
+    tracks.forEach((track, index) => {
+      const control = controls[index];
+      if (!control) return;
+      const gain = control.mute || (activeSolo && !control.solo) ? 0 : Math.max(0, Number(control.volume ?? 1));
+      for (const event of track) {
+        if (event.cmd === "note" && event.volume != null) {
+          event.volume = Math.max(0, Math.min(127, Math.round(event.volume * gain)));
+        }
+      }
+    });
+    return tracks;
   }
 
   if (meta.tone) {

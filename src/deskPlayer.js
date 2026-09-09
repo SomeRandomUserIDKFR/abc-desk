@@ -210,6 +210,9 @@ export function createTestingPlayer({
       currentAudioParams?.callbackContext?.room,
       currentAudioParams?.callbackContext?.distance,
       currentAudioParams?.callbackContext?.players,
+      currentAudioParams?.callbackContext?.violinMotion,
+      events,
+      secondsPerWholeNote,
     );
     cursorControl.onStart();
     pausedSeconds = 0;
@@ -252,6 +255,7 @@ export function createTestingPlayer({
     clearTimers();
     synth?.stop();
     roomBus?.input.disconnect();
+    roomBus?.stop?.();
     roomBus = null;
     synth = null;
     cursorControl.onFinished();
@@ -282,40 +286,49 @@ export function createTestingPlayer({
       if (svgElements.length) event.elements = [svgElements];
     }
 
-    function groupSimultaneousEvents(noteEvents) {
-      const grouped = [];
-      // Human/player timing can separate one written beat by a few hundredths
-      // of a whole note; keep those voices in one visual callback.
-      const tolerance = 0.04;
-      for (const event of [...noteEvents].sort((a, b) => a.start - b.start)) {
-        const previous = grouped[grouped.length - 1];
-        if (
-          previous &&
-          Math.abs((Number(event.start) || 0) - (Number(previous.start) || 0)) <= tolerance
-        ) {
-          previous.elements = mergeEventElements(previous.elements, event.elements);
-          previous.duration = Math.max(
-            Number(previous.duration) || 0,
-            Number(event.duration) || 0,
-          );
-          previous.end = Math.max(Number(previous.end) || 0, Number(event.end) || 0);
-        } else {
-          grouped.push({ ...event });
-        }
-      }
-      return grouped;
-    }
-
-    function mergeEventElements(left = [], right = []) {
-      const merged = [...left];
-      for (const set of right) {
-        if (!merged.includes(set)) merged.push(set);
-      }
-      return merged;
-    }
   }
 
-  function connectRoom(nextSynth, room, distance = 0.5, players = 1) {
+  function groupSimultaneousEvents(noteEvents) {
+    const grouped = [];
+    // Human/player timing can separate one written beat by a few hundredths
+    // of a whole note; keep those voices in one visual callback.
+    const tolerance = 0.04;
+    for (const event of [...noteEvents].sort((a, b) => a.start - b.start)) {
+      const previous = grouped[grouped.length - 1];
+      if (
+        previous &&
+        Math.abs((Number(event.start) || 0) - (Number(previous.start) || 0)) <= tolerance
+      ) {
+        previous.elements = mergeEventElements(previous.elements, event.elements);
+        previous.duration = Math.max(
+          Number(previous.duration) || 0,
+          Number(event.duration) || 0,
+        );
+        previous.end = Math.max(Number(previous.end) || 0, Number(event.end) || 0);
+      } else {
+        grouped.push({ ...event });
+      }
+    }
+    return grouped;
+  }
+
+  function mergeEventElements(left = [], right = []) {
+    const merged = [...left];
+    for (const set of right) {
+      if (!merged.includes(set)) merged.push(set);
+    }
+    return merged;
+  }
+
+  function connectRoom(
+    nextSynth,
+    room,
+    distance = 0.5,
+    players = 1,
+    violinMotion = false,
+    noteEvents = [],
+    wholeNoteSeconds = 2,
+  ) {
     if (!nextSynth.directSource?.length) return;
     const context = nextSynth.directSource[0].context;
     const input = context.createGain();
@@ -327,6 +340,11 @@ export function createTestingPlayer({
     const preDelay = context.createDelay(0.2);
     const wetFilter = context.createBiquadFilter();
     const convolver = context.createConvolver();
+    const bowTone = violinMotion ? context.createBiquadFilter() : null;
+    const bowLfo = violinMotion ? context.createOscillator() : null;
+    const bowLfoDepth = violinMotion ? context.createGain() : null;
+    const bowGain = violinMotion ? context.createGain() : null;
+    const bowSources = [];
     const reflections = [
       { delay: 0.011, level: 0.52, pan: -0.72 },
       { delay: 0.019, level: 0.37, pan: 0.64 },
@@ -355,8 +373,26 @@ export function createTestingPlayer({
     presence.frequency.value = 4200;
     presence.Q.value = 0.8;
     presence.gain.value = -2.5;
+    if (bowTone && bowLfo && bowLfoDepth && bowGain) {
+      bowTone.type = "peaking";
+      bowTone.frequency.value = 2600;
+      bowTone.Q.value = 0.82;
+      bowTone.gain.value = 0;
+      bowLfo.type = "sine";
+      bowLfo.frequency.value = 0.37;
+      bowLfoDepth.gain.value = 1.8;
+      bowGain.gain.value = 1;
+      bowLfo.connect(bowLfoDepth).connect(bowTone.gain);
+      const amplitudeDepth = context.createGain();
+      amplitudeDepth.gain.value = 0.01;
+      bowLfo.connect(amplitudeDepth).connect(bowGain.gain);
+      bowLfo.start();
+    }
     input.connect(warmth).connect(presence);
-    presence.connect(dry).connect(context.destination);
+    const toneOutput = bowTone ? presence.connect(bowTone) : presence;
+    toneOutput.connect(bowGain ?? dry);
+    if (bowGain) bowGain.connect(dry);
+    dry.connect(context.destination);
     if (room?.mix > 0) {
       presence.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(context.destination);
     }
@@ -375,6 +411,15 @@ export function createTestingPlayer({
       input.connect(delay).connect(reflectionGain).connect(reflectionPan).connect(context.destination);
       }
     }
+    if (violinMotion) {
+      scheduleBowContacts(
+        context,
+        input,
+        noteEvents,
+        wholeNoteSeconds,
+        bowSources,
+      );
+    }
     nextSynth.directSource.forEach((source, index) => {
       source.disconnect();
       const playerGain = context.createGain();
@@ -392,9 +437,75 @@ export function createTestingPlayer({
       playerPan.pan.value = stagePosition * Math.max(0.35, spacing);
       source.connect(playerGain).connect(playerPan).connect(input);
     });
-    roomBus = { input };
+    roomBus = {
+      input,
+      stop: () => {
+        bowLfo?.stop();
+        for (const source of bowSources) {
+          try {
+            source.stop();
+          } catch {
+            // A source may already have reached its scheduled stop time.
+          }
+        }
+      },
+    };
   }
 
+}
+
+function scheduleBowContacts(context, destination, noteEvents, wholeNoteSeconds, sources) {
+  if (!noteEvents.length) return;
+  const sampleLength = Math.ceil(context.sampleRate * 0.085);
+  const buffer = context.createBuffer(1, sampleLength, context.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let index = 0; index < data.length; index++) {
+    const envelope = Math.pow(1 - index / data.length, 2.4);
+    const body = stableNoise(1777, index) * 0.72 + stableNoise(2003, index) * 0.28;
+    data[index] = body * envelope;
+  }
+  const baseAttackFilter = context.createBiquadFilter();
+  baseAttackFilter.type = "bandpass";
+  baseAttackFilter.frequency.value = 3600;
+  baseAttackFilter.Q.value = 0.65;
+  baseAttackFilter.connect(destination);
+  const startTime = context.currentTime + 0.03;
+  for (const event of noteEvents) {
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    const attackFilter = context.createBiquadFilter();
+    const pitch = Number(event.pitch);
+    const profile = violinTransientProfile(pitch);
+    const noteStart = Math.max(0, Number(event.start) || 0);
+    const duration = Math.max(0.04, Number(event.end) - noteStart || 0.1);
+    const when = startTime + noteStart * wholeNoteSeconds;
+    const attackGain = Math.max(0.008, profile.gain * (event.instrument === "violin" ? 1 : 0.82));
+    source.buffer = buffer;
+    attackFilter.type = "bandpass";
+    attackFilter.frequency.value = profile.frequency;
+    attackFilter.Q.value = profile.q;
+    attackFilter.connect(baseAttackFilter);
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.linearRampToValueAtTime(attackGain, when + 0.014 + profile.attackLag);
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + Math.min(profile.decay, duration));
+    source.connect(gain).connect(attackFilter);
+    source.start(when);
+    source.stop(when + profile.decay + 0.01);
+    sources.push(source);
+  }
+}
+
+function violinTransientProfile(pitch) {
+  const midi = Number.isFinite(Number(pitch)) ? Number(pitch) : 69;
+  const lowness = Math.max(0, 1 - Math.max(0, midi - 52) / 26);
+  const frequency = 2100 + (1 - lowness) * 2000;
+  return {
+    frequency,
+    q: 0.7 + (1 - lowness) * 0.35,
+    gain: 0.014 + (1 - lowness) * 0.008,
+    attackLag: 0.006 + lowness * 0.012,
+    decay: 0.09 + lowness * 0.04,
+  };
 }
 
 function fillRoomImpulse(impulse, room) {

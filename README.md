@@ -139,6 +139,20 @@ Trans: -2
 
 Desk assembles voices into one conductor score. Lint flags meter mismatches.
 
+The **Format for ABC Desk** button also expands condensed ABC overlays such as
+`A2 A2& B4& C8|` into separate `Part:` voices. Shorter overlay lines receive
+rests so all generated parts remain aligned, and the source instrument is
+shared by the generated voices.
+
+When a score uses `Part:` blocks, the **Parts** editor provides editable names
+and instrument selectors. Apply changes to rewrite only each part's metadata;
+the music body remains unchanged.
+
+The same editor includes per-part **Mute**, **Solo**, and volume sliders for
+quickly isolating or balancing generated voices during playback. When source
+ABC uses `%%MIDI program`, formatting preserves that directive and does not
+add a conflicting `Inst:` line.
+
 ### Share
 
 **Share** copies a URL with the tune in the hash (`#d=...`). Open the link to reload that source.

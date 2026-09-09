@@ -8,7 +8,7 @@ import {
   deskStatusFragment,
   filterDecorationWarnings,
 } from "./deskDialect.js";
-import { parseParts } from "./deskParts.js";
+import { formatForDesk, parseParts, updatePartMetadata } from "./deskParts.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
 import { createDeskPlayer, createTestingPlayer } from "./deskPlayer.js";
@@ -193,11 +193,19 @@ app.innerHTML = `
           </select>
           <button type="button" id="copy">Copy</button>
           <button type="button" id="copy-strict" title="Strip Desk tags; keep MIDI program">Copy strict</button>
+          <button type="button" id="format-desk" title="Split overlay voices and convert them into ABC Desk parts">Format for ABC Desk</button>
           <button type="button" id="share" title="Copy shareable URL">Share</button>
           <button type="button" id="clear">Clear</button>
         </div>
       </div>
       <textarea id="editor" spellcheck="false" aria-label="ABC notation editor"></textarea>
+      <div id="parts-panel" class="lint-panel parts-panel" aria-label="Part editor" hidden>
+        <div class="lint-header">
+          <h2 class="panel-title">Parts</h2>
+          <button type="button" id="apply-parts">Apply changes</button>
+        </div>
+        <div id="parts-list"></div>
+      </div>
       <div class="lint-panel" aria-label="Composition lint">
         <div class="lint-header">
           <h2 class="panel-title">Lint</h2>
@@ -270,6 +278,10 @@ const downloadWavBtn = document.querySelector("#download-wav");
 const downloadPdfBtn = document.querySelector("#download-pdf");
 const downloadPngBtn = document.querySelector("#download-png");
 const downloadJpegBtn = document.querySelector("#download-jpeg");
+const formatDeskBtn = document.querySelector("#format-desk");
+const partsPanel = document.querySelector("#parts-panel");
+const partsList = document.querySelector("#parts-list");
+const applyPartsBtn = document.querySelector("#apply-parts");
 const testingMetrics = document.querySelector("#testing-metrics");
 const supportsAudio = abcjs.synth.supportsAudio();
 
@@ -283,6 +295,77 @@ let renderTimer = null;
 let lastVisualObj = null;
 let lastPrepared = null;
 let renderGen = 0;
+let partPlaybackControls = [];
+
+const PART_INSTRUMENTS = [
+  "atmosphere", "crystal", "violin", "viola", "cello", "contrabass",
+  "flute", "clarinet", "oboe", "bassoon", "piano", "harpsichord",
+];
+
+function renderPartsEditor() {
+  const parsed = parseParts(editor.value);
+  partsList.replaceChildren();
+  partsPanel.hidden = !parsed.isMultiPart;
+  if (!parsed.isMultiPart) return;
+  parsed.parts.forEach((part, index) => {
+    const row = document.createElement("div");
+    row.className = "part-editor-row";
+    row.style.display = "grid";
+    row.style.gridTemplateColumns = "minmax(0, 1fr) minmax(9rem, 0.5fr) auto auto minmax(5rem, 0.4fr)";
+    row.style.gap = "0.5rem";
+    row.style.marginTop = "0.5rem";
+    row.dataset.index = String(index);
+    const name = document.createElement("input");
+    name.type = "text";
+    name.value = part.name;
+    name.dataset.partField = "name";
+    name.setAttribute("aria-label", `Part ${index + 1} name`);
+    const instrument = document.createElement("select");
+    instrument.dataset.partField = "instrument";
+    instrument.setAttribute("aria-label", `Part ${index + 1} instrument`);
+    const current = part.instrument || "violin";
+    [...new Set([...PART_INSTRUMENTS, current])].forEach((value) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      option.selected = value === current;
+      instrument.append(option);
+    });
+    const control = partPlaybackControls[index] || { volume: 1, mute: false, solo: false };
+    const mute = document.createElement("button");
+    mute.type = "button";
+    mute.textContent = control.mute ? "Unmute" : "Mute";
+    mute.dataset.partAction = "mute";
+    mute.addEventListener("click", () => {
+      partPlaybackControls[index] = { ...control, mute: !control.mute };
+      renderPartsEditor();
+      renderScore();
+    });
+    const solo = document.createElement("button");
+    solo.type = "button";
+    solo.textContent = control.solo ? "Unsolo" : "Solo";
+    solo.dataset.partAction = "solo";
+    solo.addEventListener("click", () => {
+      partPlaybackControls[index] = { ...control, solo: !control.solo };
+      renderPartsEditor();
+      renderScore();
+    });
+    const volume = document.createElement("input");
+    volume.type = "range";
+    volume.min = "0";
+    volume.max = "1.5";
+    volume.step = "0.05";
+    volume.value = String(control.volume);
+    volume.title = "Part volume";
+    volume.setAttribute("aria-label", `Part ${index + 1} volume`);
+    volume.addEventListener("input", () => {
+      partPlaybackControls[index] = { ...control, volume: Number(volume.value) };
+    });
+    volume.addEventListener("change", renderScore);
+    row.append(name, instrument, mute, solo, volume);
+    partsList.append(row);
+  });
+}
 
 function safeFileStem(raw) {
   const base = String(raw || "untitled")
@@ -635,7 +718,7 @@ function prepareSource(source) {
   const parsed = parseDeskHeaders(working);
   return {
     cleanAbc: parsed.cleanAbc,
-    meta: { ...parsed.meta, parts: partsMeta, sourceText: parsed.cleanAbc },
+    meta: { ...parsed.meta, parts: partsMeta, partPlayback: partPlaybackControls, sourceText: parsed.cleanAbc },
     warnings: [...extraWarnings, ...parsed.warnings],
     partInfo,
     sourceForLint: source,
@@ -645,6 +728,7 @@ function prepareSource(source) {
 function renderScore() {
   const abc = editor.value;
   const gen = ++renderGen;
+  renderPartsEditor();
 
   if (!abc.trim()) {
     paper.innerHTML = "";
@@ -778,6 +862,28 @@ sampleSelect.addEventListener("change", () => {
   editor.value = SAMPLES[key] ?? DEFAULT_ABC;
   history.replaceState(null, "", window.location.pathname + window.location.search);
   renderScore();
+});
+
+formatDeskBtn.addEventListener("click", () => {
+  const formatted = formatForDesk(editor.value);
+  if (!formatted) {
+    setStatus("No overlay voices or standard V: voices found to format.", true);
+    return;
+  }
+  editor.value = formatted;
+  sampleSelect.value = "";
+  renderScore();
+  setStatus("Split overlay voices into ABC Desk Part: blocks.");
+});
+
+applyPartsBtn.addEventListener("click", () => {
+  const updates = [...partsList.querySelectorAll(".part-editor-row")].map((row) => ({
+    name: row.querySelector('[data-part-field="name"]')?.value || "",
+    instrument: row.querySelector('[data-part-field="instrument"]')?.value || "",
+  }));
+  editor.value = updatePartMetadata(editor.value, updates);
+  renderScore();
+  setStatus("Updated part names and instruments.");
 });
 
 document.querySelector("#render-now").addEventListener("click", renderScore);
