@@ -395,11 +395,16 @@ export function createTestingPlayer({
     if (!nextSynth.directSource?.length) return;
     const context = nextSynth.directSource[0].context;
     const input = context.createGain();
-    const violinVibrato = performanceContext?.violinVibrato === true;
+    const vibratoEvents = noteEvents.filter(
+      (event) => Number(event.vibratoDepth) > 0,
+    );
+    const violinVibrato =
+      performanceContext?.violinVibrato === true && vibratoEvents.length > 0;
     const vibratoInput = violinVibrato ? context.createGain() : null;
     const vibratoDelay = violinVibrato ? context.createDelay(0.05) : null;
     const vibratoLfo = violinVibrato ? context.createOscillator() : null;
     const vibratoDepth = violinVibrato ? context.createGain() : null;
+    const vibratoWet = violinVibrato ? context.createGain() : null;
     const dry = context.createGain();
     const wet = context.createGain();
     const roomProfile = room ?? { decay: 0.1, damping: 0.4, mix: 0 };
@@ -526,17 +531,25 @@ export function createTestingPlayer({
         .connect(playerPan)
         .connect(vibratoInput ?? input);
     });
-    if (vibratoInput && vibratoDelay && vibratoLfo && vibratoDepth) {
+    if (
+      vibratoInput &&
+      vibratoDelay &&
+      vibratoLfo &&
+      vibratoDepth &&
+      vibratoWet
+    ) {
       vibratoDelay.delayTime.value = 0.012;
+      vibratoInput.connect(input);
+      vibratoWet.gain.value = 0.14;
+      vibratoDelay.connect(vibratoWet).connect(input);
       vibratoDepth.gain.value = 0.00008;
       vibratoLfo.frequency.value = 5.2;
       vibratoLfo.connect(vibratoDepth).connect(vibratoDelay.delayTime);
-      vibratoInput.connect(vibratoDelay).connect(input);
       scheduleViolinVibrato(
         context,
         vibratoLfo.frequency,
         vibratoDepth.gain,
-        noteEvents,
+        vibratoEvents,
         secondsPerWholeNote,
       );
       vibratoLfo.start();
@@ -549,7 +562,14 @@ export function createTestingPlayer({
       performanceContext,
       roomMix,
     );
-    roomBus = { input, roomNoise, vibratoInput, vibratoDelay, vibratoLfo };
+    roomBus = {
+      input,
+      roomNoise,
+      vibratoInput,
+      vibratoDelay,
+      vibratoLfo,
+      vibratoWet,
+    };
   }
 
 }
