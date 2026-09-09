@@ -333,16 +333,11 @@ export function createTestingPlayer({
 
   function attachVisualElements(noteEvents, tune) {
     const selectables = tune.getSelectableArray?.() ?? [];
-    const noteSelectables = selectables.filter(
-      (selectable) =>
-        selectable.absEl?.abcelem?.el_type === "note" && selectable.svgEl,
-    );
     const simultaneousCounts = new Map();
     for (const event of noteEvents) {
       const key = Math.round((Number(event.start) || 0) * 1000);
       simultaneousCounts.set(key, (simultaneousCounts.get(key) || 0) + 1);
     }
-    let fallbackIndex = 0;
     for (const event of noteEvents) {
       const matchingSelectables = selectables
         .filter((selectable) => {
@@ -364,21 +359,13 @@ export function createTestingPlayer({
           abc.endChar === event.endChar
         );
       });
-      const candidates = exactMatches.length ? exactMatches : matchingSelectables;
+      const candidates = exactMatches;
       const eventKey = Math.round((Number(event.start) || 0) * 1000);
       const svgElements = (
         simultaneousCounts.get(eventKey) > 1
           ? candidates
           : candidates.slice(0, 1)
       ).map((selectable) => selectable.svgEl);
-      if (!svgElements.length) {
-        const fallback =
-          noteSelectables[fallbackIndex % noteSelectables.length];
-        fallbackIndex++;
-        if (fallback) {
-          svgElements.push(fallback.svgEl);
-        }
-      }
       if (svgElements.length) event.elements = [svgElements];
     }
   }
