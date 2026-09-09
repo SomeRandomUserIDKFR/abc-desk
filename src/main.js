@@ -703,6 +703,8 @@ function initSynth() {
         cursorControl: new CursorControl(true),
       majorExpansion: testingFramework,
       onPerformanceEvent: ({ seconds }) => updateTimelinePlayhead(seconds),
+      onPlaybackError: (error) =>
+        setStatus(`Audio setup failed: ${error.message ?? error}`, true),
     })
     : createDeskPlayer({
         abcjs,

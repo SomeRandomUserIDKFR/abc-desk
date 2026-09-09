@@ -109,6 +109,7 @@ export function createTestingPlayer({
   cursorControl,
   majorExpansion = false,
   onPerformanceEvent = null,
+  onPlaybackError = null,
 }) {
   let loaded = false;
   let visualObj = null;
@@ -121,6 +122,9 @@ export function createTestingPlayer({
   let roomBus = null;
   let secondsPerWholeNote = 2;
   let pausedSeconds = 0;
+  let playbackEnded = false;
+  let playbackStarting = false;
+  let playbackRequest = 0;
 
   return {
     supportsAudio: true,
@@ -136,7 +140,11 @@ export function createTestingPlayer({
         <button type="button" data-test-pause>Pause</button>
         <button type="button" data-test-reset>Reset</button>
       `;
-      audio.querySelector("[data-test-play]").addEventListener("click", play);
+      audio.querySelector("[data-test-play]").addEventListener("click", () => {
+        void play().catch((error) => {
+          onPlaybackError?.(error);
+        });
+      });
       audio.querySelector("[data-test-pause]").addEventListener("click", pause);
       audio.querySelector("[data-test-reset]").addEventListener("click", reset);
       loaded = true;
@@ -172,6 +180,7 @@ export function createTestingPlayer({
       events = groupSimultaneousEvents(events);
       diagnostics = summarizeEvents(tracks, {}, graph);
       paused = false;
+      playbackEnded = false;
     },
 
     getDiagnostics() {
@@ -214,28 +223,49 @@ export function createTestingPlayer({
 
   async function play() {
     if (!visualObj) return;
-    if (synth && paused) {
+    if (playbackStarting) return;
+    if (synth && paused && !playbackEnded) {
       synth.start();
       paused = false;
       scheduleCursor(pausedSeconds);
       return;
     }
-    synth = new abcjs.synth.CreateSynth();
-    await synth.init({ visualObj, options: currentAudioParams });
-    await synth.prime();
-    synth.start();
-    connectRoom(
-      synth,
-      currentAudioParams?.callbackContext?.room,
-      currentAudioParams?.callbackContext?.distance,
-      currentAudioParams?.callbackContext?.players,
-      currentAudioParams?.pan,
-      currentAudioParams?.callbackContext,
-      events,
-    );
-    cursorControl.onStart();
-    pausedSeconds = 0;
-    scheduleCursor(0);
+    playbackStarting = true;
+    const request = ++playbackRequest;
+    const nextSynth = new abcjs.synth.CreateSynth();
+    try {
+      await nextSynth.init({ visualObj, options: currentAudioParams });
+      await nextSynth.prime();
+      if (request !== playbackRequest) {
+        nextSynth.stop?.();
+        return;
+      }
+      synth?.stop?.();
+      synth = nextSynth;
+      synth.start();
+      connectRoom(
+        synth,
+        currentAudioParams?.callbackContext?.room,
+        currentAudioParams?.callbackContext?.distance,
+        currentAudioParams?.callbackContext?.players,
+        currentAudioParams?.pan,
+        currentAudioParams?.callbackContext,
+        events,
+      );
+      cursorControl.onStart();
+      pausedSeconds = 0;
+      playbackEnded = false;
+      scheduleCursor(0);
+    } catch (error) {
+      nextSynth.stop?.();
+      if (request === playbackRequest) {
+        synth = null;
+        cursorControl.onFinished();
+      }
+      throw error;
+    } finally {
+      if (request === playbackRequest) playbackStarting = false;
+    }
   }
 
   function scheduleCursor(fromSeconds) {
@@ -262,22 +292,28 @@ export function createTestingPlayer({
     timers.push(window.setTimeout(() => {
       cursorControl.onFinished();
       paused = true;
+      playbackEnded = true;
     }, Math.max(0, Math.round((end * secondsPerWholeNote - fromSeconds) * 1000)) + 20));
   }
 
   function pause() {
+    playbackRequest++;
     paused = true;
     clearTimers();
     pausedSeconds = synth?.pause?.() ?? pausedSeconds;
+    playbackEnded = false;
+    playbackStarting = false;
   }
 
   function reset() {
     pause();
     cursorControl.onFinished();
     paused = false;
+    playbackEnded = false;
   }
 
   function invalidate() {
+    playbackRequest++;
     clearTimers();
     synth?.stop();
     roomBus?.roomNoise?.stop?.();
@@ -286,6 +322,8 @@ export function createTestingPlayer({
     synth = null;
     cursorControl.onFinished();
     paused = false;
+    playbackEnded = false;
+    playbackStarting = false;
   }
 
   function clearTimers() {
