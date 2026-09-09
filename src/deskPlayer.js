@@ -151,7 +151,10 @@ export function createTestingPlayer({
       visualObj = nextVisualObj;
       currentAudioParams = amplifyExperimentalHuman(audioParams, majorExpansion);
       const bpm = Number(visualObj.getBpm?.());
-      secondsPerWholeNote = Number.isFinite(bpm) && bpm > 0 ? 240 / bpm : 2;
+      secondsPerWholeNote = resolveSecondsPerWholeNote(
+        currentAudioParams?.callbackContext?.sourceText,
+        bpm,
+      );
       const sequence = visualObj.setUpAudio(currentAudioParams);
       const tracks = normalizePerformanceTracks(sequence?.tracks ?? []);
       for (const track of tracks) {
@@ -296,30 +299,45 @@ export function createTestingPlayer({
       (selectable) =>
         selectable.absEl?.abcelem?.el_type === "note" && selectable.svgEl,
     );
-    const used = new Set();
+    const simultaneousCounts = new Map();
     for (const event of noteEvents) {
-      const svgElements = selectables
+      const key = Math.round((Number(event.start) || 0) * 1000);
+      simultaneousCounts.set(key, (simultaneousCounts.get(key) || 0) + 1);
+    }
+    let fallbackIndex = 0;
+    for (const event of noteEvents) {
+      const matchingSelectables = selectables
         .filter((selectable) => {
           const abc = selectable.absEl?.abcelem;
           return (
             abc &&
             selectable.svgEl &&
-            !used.has(selectable) &&
             event.startChar != null &&
             event.endChar != null &&
             abc.startChar < event.endChar &&
             abc.endChar > event.startChar &&
             abc.el_type === "note"
           );
-        })
-        .map((selectable) => {
-          used.add(selectable);
-          return selectable.svgEl;
         });
+      const exactMatches = matchingSelectables.filter((selectable) => {
+        const abc = selectable.absEl.abcelem;
+        return (
+          abc.startChar === event.startChar &&
+          abc.endChar === event.endChar
+        );
+      });
+      const candidates = exactMatches.length ? exactMatches : matchingSelectables;
+      const eventKey = Math.round((Number(event.start) || 0) * 1000);
+      const svgElements = (
+        simultaneousCounts.get(eventKey) > 1
+          ? candidates
+          : candidates.slice(0, 1)
+      ).map((selectable) => selectable.svgEl);
       if (!svgElements.length) {
-        const fallback = noteSelectables.find((selectable) => !used.has(selectable));
+        const fallback =
+          noteSelectables[fallbackIndex % noteSelectables.length];
+        fallbackIndex++;
         if (fallback) {
-          used.add(fallback);
           svgElements.push(fallback.svgEl);
         }
       }
@@ -422,6 +440,7 @@ export function createTestingPlayer({
       const playerGain = context.createGain();
       const playerPan = context.createStereoPanner();
       const playerTone = context.createBiquadFilter();
+      const lowBody = context.createBiquadFilter();
       const bowTexture = context.createBiquadFilter();
       const variation = Math.min(0.08, (playerCount - 1) * 0.012);
       // Keep larger sections full without letting layered replicas dominate.
@@ -432,6 +451,10 @@ export function createTestingPlayer({
       playerTone.frequency.value = 2100 + Math.sin((index + 1) * 1.73) * 260;
       playerTone.Q.value = 0.65;
       playerTone.gain.value = Math.sin((index + 1) * 2.91) * 1.15;
+      lowBody.type = "lowshelf";
+      lowBody.frequency.value = 165;
+      lowBody.gain.value =
+        performanceContext?.forceInstrument === "contrabass" ? 2.4 : 0;
       const humanAmount = Math.max(
         0,
         Math.min(1,         Number(performanceContext?.humanize?.amount ?? 0) * 2),
@@ -460,6 +483,7 @@ export function createTestingPlayer({
       source
         .connect(playerGain)
         .connect(playerTone)
+        .connect(lowBody)
         .connect(bowTexture)
         .connect(playerPan)
         .connect(vibratoInput ?? input);
@@ -472,6 +496,7 @@ export function createTestingPlayer({
       vibratoInput.connect(vibratoDelay).connect(input);
       scheduleViolinVibrato(
         context,
+        vibratoLfo.frequency,
         vibratoDepth.gain,
         noteEvents,
         secondsPerWholeNote,
@@ -491,14 +516,30 @@ export function createTestingPlayer({
 
 }
 
-function scheduleViolinVibrato(context, depthParam, noteEvents, wholeNoteSeconds) {
+function scheduleViolinVibrato(
+  context,
+  rateParam,
+  depthParam,
+  noteEvents,
+  wholeNoteSeconds,
+) {
   const now = context.currentTime;
+  rateParam.cancelScheduledValues(now);
+  rateParam.setValueAtTime(5.2, now);
   depthParam.cancelScheduledValues(now);
   depthParam.setValueAtTime(0.00008, now);
   for (const event of noteEvents) {
     const start = now + Math.max(0, Number(event.start) || 0) * wholeNoteSeconds;
     const duration = Math.max(0.08, eventDuration(event) * wholeNoteSeconds);
     const depth = Math.max(0, Math.min(1, (Number(event.vibratoDepth) || 0) / 12));
+    const phraseIntensity = Math.max(
+      0,
+      Math.min(1, ((Number(event.volume) || 64) - 48) / 72),
+    );
+    const baseRate = Math.max(
+      4.5,
+      Math.min(7.2, 4.7 + (Number(event.vibratoRate) || 0.72) * 1.55 + phraseIntensity * 0.8),
+    );
     const curve = event.vibratoCurve?.length
       ? event.vibratoCurve
       : [
@@ -506,13 +547,19 @@ function scheduleViolinVibrato(context, depthParam, noteEvents, wholeNoteSeconds
           { time: 0.35, depth: 0.45 },
           { time: 1, depth: 1 },
         ];
+    rateParam.setValueAtTime(baseRate, start);
     depthParam.setValueAtTime(0.00008, start);
     for (const point of curve) {
       const pointTime = start + Math.max(0, Math.min(1, point.time)) * duration;
+      const rate =
+        baseRate *
+        (1 + Math.max(0, Math.min(1, point.depth)) * (0.06 + phraseIntensity * 0.06));
+      rateParam.linearRampToValueAtTime(Math.min(7.8, rate), pointTime);
       const pointDepth =
         0.00008 + depth * 0.0008 * Math.max(0, Math.min(1, point.depth));
       depthParam.linearRampToValueAtTime(pointDepth, pointTime);
     }
+    rateParam.linearRampToValueAtTime(baseRate * 0.96, start + duration);
     depthParam.linearRampToValueAtTime(0.00008, start + duration);
   }
 }
@@ -605,12 +652,18 @@ function scheduleBowContactTexture(
     const start = Math.max(0, Number(note.start) || 0);
     const duration = Math.max(0.01, Number(note.duration) || 0.05);
     const friction = Math.abs(Number(note.bowFriction) || 0);
+    const lowRegister = Number(note.pitch) <= 55;
+    const deepBass = Number(note.pitch) <= 43;
     const portamento = note.portamento ? 1 : 0;
     const slurred = note.articulation === "legato" || portamento;
     if (slurred && !portamento) continue;
     const intensity = Math.min(
       1,
-      (0.22 + friction * 0.28 + portamento * 0.1) *
+      (0.22 +
+        friction * 0.28 +
+        portamento * 0.1 +
+        (lowRegister ? 0.08 : 0) +
+        (deepBass ? 0.06 : 0)) *
         humanAmount *
         (slurred ? 0.42 : 1),
     );
@@ -619,15 +672,35 @@ function scheduleBowContactTexture(
     const filter = context.createBiquadFilter();
     const gain = context.createGain();
     const startTime = now + start * secondsPerWholeNote;
-    const attack = Math.min(0.025, duration * secondsPerWholeNote * 0.18);
-    const release = Math.min(0.08, duration * secondsPerWholeNote * 0.28);
+    const variation = stableNoise(
+      hashString(`bow-attack:${note.id ?? start}:${note.pitch}`),
+      0,
+    );
+    const rapidNote = duration < 0.45 ? 1 : 0;
+    const attack = Math.min(
+      0.025,
+      duration *
+        secondsPerWholeNote *
+        (lowRegister ? 0.22 + (variation + 1) * 0.025 : 0.16 + (variation + 1) * 0.025),
+    );
+    const release = Math.min(
+      0.08,
+      duration * secondsPerWholeNote * (0.24 + (variation + 1) * 0.035),
+    );
+    const transientLevel =
+      (0.0012 + variation * 0.00012 * (0.55 + rapidNote * 0.45)) *
+      (1 + Math.abs(Number(note.bowContact) || 0) * 0.12);
     source.buffer = noiseBuffer;
+    source.playbackRate.value = 1 + variation * 0.035;
     filter.type = "bandpass";
-    filter.frequency.value = 4200 + (Number(note.pitch) || 60) * 18;
-    filter.Q.value = 0.7;
+    filter.frequency.value =
+      (lowRegister ? 2500 : 4200) +
+      (Number(note.pitch) || 60) * (lowRegister ? 11 : 18) +
+      variation * (rapidNote ? 420 : 240);
+    filter.Q.value = 0.65 + (variation + 1) * 0.08;
     gain.gain.setValueAtTime(0.00001, startTime);
     gain.gain.linearRampToValueAtTime(
-      0.0012 * intensity * (1 + roomMix * 0.35),
+      transientLevel * intensity * (1 + roomMix * 0.35),
       startTime + attack,
     );
     gain.gain.exponentialRampToValueAtTime(
@@ -800,6 +873,28 @@ function eventDuration(event) {
 
 function eventEnd(event) {
   return (Number(event.start) || 0) + eventDuration(event);
+}
+
+function resolveSecondsPerWholeNote(sourceText, fallbackBpm) {
+  const tempoMatch = String(sourceText ?? "").match(
+    /^\s*Q\s*:\s*(?:(\d+)\s*\/\s*(\d+)\s*=\s*)?(\d+(?:\.\d+)?)\b/im,
+  );
+  if (tempoMatch) {
+    const numerator = Number(tempoMatch[1] ?? 1);
+    const denominator = Number(tempoMatch[2] ?? 4);
+    const bpm = Number(tempoMatch[3]);
+    if (
+      Number.isFinite(numerator) &&
+      numerator > 0 &&
+      Number.isFinite(denominator) &&
+      denominator > 0 &&
+      Number.isFinite(bpm) &&
+      bpm > 0
+    ) {
+      return (60 * denominator) / (numerator * bpm);
+    }
+  }
+  return Number.isFinite(fallbackBpm) && fallbackBpm > 0 ? 240 / fallbackBpm : 2;
 }
 
 function amplifyExperimentalHuman(audioParams, majorExpansion = false) {

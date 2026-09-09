@@ -8,7 +8,7 @@ import {
   deskStatusFragment,
   filterDecorationWarnings,
 } from "./deskDialect.js";
-import { parseParts } from "./deskParts.js";
+import { formatForDesk, parseParts } from "./deskParts.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
 import { createDeskPlayer, createTestingPlayer } from "./deskPlayer.js";
@@ -28,6 +28,24 @@ K:Emin
 EBBA B2 EB|B2 AB defg|afe^c dBAF|DEFD E2:|
 |:gf|eB B2 gBfB|eB B2 gedB|A2 FA DAFA|A2 FA defg|
 eB B2 gBfB|eB B2 defg|afe^c dBAF|DEFD E2:|`,
+
+  lanterns: `X:1
+T:Lanterns on the Water
+C:ABC Desk original
+Inst: violin
+Tone: emotional
+Human: 0.34
+Room: chamber
+Distance: 0.35
+M:6/8
+L:1/8
+Q:1/4=68
+K:Dm
+V:1 name="Solo violin"
+!p! (DFA d2c2 | A2G2 F2 | !crescendo(! EFG A2B2 | c4 A2 !crescendo)! |
+!f! d2c2 A2 | G2F2 E2 | !diminuendo(! D2F2 A2 | D6 !diminuendo)! |
+!p! (A,DF A2G2 | F2E2 D2 | !crescendo(! FGA c2d2 | e4 c2 !crescendo)! |
+!f! f2e2 d2 | c2A2 F2 | !diminuendo(! E2D2 C2 | D6 !diminuendo)!:|`,
 
   twinkle: `X:1
 T:Twinkle Twinkle Little Star
@@ -184,11 +202,13 @@ F2A2 d2c2 | B2G2 A2F2 | D4 z4 | A,8 |`,
 
 const shared = readShareFromLocation();
 
-function presetInstrument(source, instrument) {
+function presetInstrument(source, instrument, humanAmount = null) {
   const lines = String(source).split(/\r?\n/);
   const instrumentLine = /^\s*Inst\s*:/i;
   const midiLine = /^\s*%%MIDI\s+program\b/i;
+  const humanLine = /^\s*(?:Human|Imperfect)\s*:/i;
   let foundInstrument = false;
+  let foundHumanization = false;
   const preset = lines.map((line) => {
     if (instrumentLine.test(line)) {
       foundInstrument = true;
@@ -198,12 +218,20 @@ function presetInstrument(source, instrument) {
       foundInstrument = true;
       return "%%MIDI program 40";
     }
+    if (humanLine.test(line) && humanAmount != null) {
+      foundHumanization = true;
+      return `Human: ${humanAmount}`;
+    }
     return line;
   });
 
   if (!foundInstrument) {
     const keyIndex = preset.findIndex((line) => /^\s*K\s*:/i.test(line));
     preset.splice(keyIndex >= 0 ? keyIndex : 0, 0, `Inst: ${instrument}`);
+  }
+  if (humanAmount != null && !foundHumanization) {
+    const keyIndex = preset.findIndex((line) => /^\s*K\s*:/i.test(line));
+    preset.splice(keyIndex >= 0 ? keyIndex : 0, 0, `Human: ${humanAmount}`);
   }
   return preset.join("\n");
 }
@@ -216,7 +244,9 @@ const museScoreFramework = frameworkHash === "#musescore";
 const experimentalFramework = !oldFramework;
 const DEFAULT_ABC =
   shared ||
-  (violinPreset ? presetInstrument(SAMPLES.cooleys, "violin") : SAMPLES.cooleys);
+  (violinPreset
+    ? presetInstrument(SAMPLES.cooleys, "violin", 0.28)
+    : SAMPLES.cooleys);
 
 const app = document.querySelector("#app");
 
@@ -233,6 +263,7 @@ app.innerHTML = `
           <label class="sr-only" for="sample">Sample tune</label>
           <select id="sample" title="Load a sample">
             <option value="cooleys">Cooley's</option>
+            <option value="lanterns">Lanterns on the Water</option>
             <option value="twinkle">Twinkle</option>
             <option value="bach">Bach</option>
             <option value="blues">Blues</option>
@@ -246,6 +277,7 @@ app.innerHTML = `
           </select>
           <button type="button" id="copy">Copy</button>
           <button type="button" id="copy-strict" title="Strip Desk tags; keep MIDI program">Copy strict</button>
+          <button type="button" id="format-desk" title="Convert standard V: voices into Part: blocks">Format for ABC Desk</button>
           <button type="button" id="share" title="Copy shareable URL">Share</button>
           <button type="button" id="clear">Clear</button>
         </div>
@@ -325,6 +357,7 @@ const editor = document.querySelector("#editor");
 const paper = document.querySelector("#paper");
 const statusEl = document.querySelector("#status");
 const sampleSelect = document.querySelector("#sample");
+const formatDeskBtn = document.querySelector("#format-desk");
 const audioEl = document.querySelector("#audio");
 const lintList = document.querySelector("#lint-list");
 const lintCount = document.querySelector("#lint-count");
@@ -957,6 +990,18 @@ sampleSelect.addEventListener("change", () => {
   editor.value = SAMPLES[key] ?? DEFAULT_ABC;
   history.replaceState(null, "", window.location.pathname + window.location.search);
   renderScore();
+});
+
+formatDeskBtn.addEventListener("click", () => {
+  const formatted = formatForDesk(editor.value);
+  if (!formatted) {
+    setStatus("No standard V: voices found to format, or the source already uses Part: blocks.", true);
+    return;
+  }
+  editor.value = formatted;
+  sampleSelect.value = "";
+  renderScore();
+  setStatus("Converted standard voices into ABC Desk Part: blocks.");
 });
 
 document.querySelector("#render-now").addEventListener("click", renderScore);

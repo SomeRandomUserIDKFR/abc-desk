@@ -489,18 +489,6 @@ export function expandDeskDecorations(abc) {
     }
   }
 
-  function violinBowCycle(note, duration, seed, amount) {
-    const pitch = Number(note.pitch);
-    const register = Number.isFinite(pitch) ? Math.max(-1, Math.min(1, (pitch - 67) / 24)) : 0;
-    const bowLength = 0.55 + stableUnitNoise(`${seed}:bow-length`) * 0.35;
-    const bowPhase = stableUnitNoise(`${seed}:bow-phase`) * Math.PI * 2;
-    const cycle = Math.sin((duration / bowLength) * Math.PI * 1.6 + bowPhase);
-    const settling = duration > 0.3 ? Math.min(1, (duration - 0.3) / 1.4) : 0;
-    const pressure = cycle * 0.035 * settling;
-    const registerResponse = register * 0.012 * Math.min(1, duration * 2);
-    return 1 + (pressure + registerResponse) * amount;
-  }
-
   out = out.replace(DESK_DECO_RE, (_, name) => {
     const key = name.toLowerCase();
     const def = DESK_DECORATIONS[key];
@@ -1079,19 +1067,24 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       const shortFactor =
         (shortBase + articulationBoost * 0.4 + attackBoost) * denseChordFactor;
       let volume = Math.max(14, Math.round(note.volume * shortFactor));
+      const explicitStaccato =
+        String(note.articulation ?? note.endType ?? "").toLowerCase().includes("staccato");
+      if (explicitStaccato) {
+        volume = Math.round(volume * (simultaneousCount >= 4 ? 1.05 : 1.12));
+      }
       if (family === "strings" && dur <= 0.25) {
         const aggressiveTransient = simultaneousCount >= 4 ? 0.25 : 1;
         volume = Math.max(
           16,
           Math.min(
-            108,
+            118,
             Math.round(
               volume * (1 + (toneMix.attack ?? 1) * 0.08 + (toneMix.articulation ?? 1) * 0.06) * aggressiveTransient + 5,
             ),
           ),
         );
       }
-      note.volume = Math.min(108, volume);
+      note.volume = Math.min(118, volume);
     }
   }
 
@@ -1263,6 +1256,8 @@ export function balanceHeldNotes(tracks, ctx = {}) {
             `vibrato-depth:${trackIndex}:${phraseProfile.seed}:${index}:${note.start}:${note.pitch}`,
           );
           const bowedString = isBowedStringInstrument(note.instrument);
+          const lowRegister = Number(note.pitch) <= 55;
+          const deepBass = Number(note.pitch) <= 43;
           const vibratoDepth =
             Math.min(bowedString ? 18 : 14, 3 + duration * 2.5) *
             phraseProfile.vibratoDepth *
@@ -1639,9 +1634,20 @@ function applyHumanization(tracks, humanize) {
           if (isViolinInstrument(note.instrument)) {
             volumeFactor *= violinBowCycle(note, dur, seedBase, amount);
           }
+          if (lowRegister) {
+            // Large strings speak slowly and lose apparent level in the lowest register.
+            volumeFactor *= 1.04 + Math.min(0.12, (55 - Number(note.pitch)) * 0.006);
+            note.lowStringResponse = Math.round(
+              (0.35 + (deepBass ? 0.3 : 0.12) + stableUnitNoise(`${seedBase}:low-body`) * 0.12) *
+                100,
+            ) / 100;
+          }
           if (mistakeNoise < amount * 0.06) {
             volumeFactor *= 0.9 + stableUnitNoise(`${seedBase}:bow-slip`) * 0.12;
           }
+        }
+        if (lowRegister && family === "bass" && !bowedString) {
+          volumeFactor *= 1.06 + Math.min(0.1, (55 - Number(note.pitch)) * 0.005);
         }
         note.volume = Math.max(10, Math.min(118, Math.round(note.volume * volumeFactor)));
       }
@@ -1817,6 +1823,20 @@ function stableUnitNoise(seed) {
 
 function stableSignedNoise(seed) {
   return stableUnitNoise(seed) * 2 - 1;
+}
+
+function violinBowCycle(note, duration, seed, amount) {
+  const pitch = Number(note.pitch);
+  const register = Number.isFinite(pitch)
+    ? Math.max(-1, Math.min(1, (pitch - 67) / 24))
+    : 0;
+  const bowLength = 0.55 + stableUnitNoise(`${seed}:bow-length`) * 0.35;
+  const bowPhase = stableUnitNoise(`${seed}:bow-phase`) * Math.PI * 2;
+  const cycle = Math.sin((duration / bowLength) * Math.PI * 1.6 + bowPhase);
+  const settling = duration > 0.3 ? Math.min(1, (duration - 0.3) / 1.4) : 0;
+  const pressure = cycle * 0.035 * settling;
+  const registerResponse = register * 0.012 * Math.min(1, duration * 2);
+  return 1 + (pressure + registerResponse) * amount;
 }
 
 function instrumentFamily(instrument) {

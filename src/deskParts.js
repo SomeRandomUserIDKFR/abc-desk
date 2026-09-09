@@ -20,6 +20,150 @@ import { parseDeskHeaders } from "./deskDialect.js";
 const PART_START = /^Part:\s*(.+)$/i;
 const TRANS_LINE = /^(?:Trans|Transpose)\s*:\s*(-?\d+)\s*$/i;
 
+export function formatForDesk(source) {
+  if (/^\s*Part\s*:/im.test(source)) return null;
+  const lines = source.split(/\r?\n/);
+  const voices = new Map();
+  let currentVoice = null;
+  const header = [];
+  let musicStarted = false;
+
+  for (const line of lines) {
+    const declaration = line.match(/^\s*V\s*:\s*(\S+)(.*)$/i);
+    if (declaration) {
+      musicStarted = true;
+      const id = declaration[1];
+      const attributes = declaration[2];
+      voices.set(id, {
+        id,
+        name: readVoiceAttribute(attributes, "name") || `Voice ${id}`,
+        clef: readVoiceAttribute(attributes, "clef"),
+        lines: voices.get(id)?.lines ?? [],
+      });
+      currentVoice = id;
+      continue;
+    }
+    if (!musicStarted) {
+      if (!/^\s*%/.test(line)) header.push(line);
+      continue;
+    }
+    const marked = [...line.matchAll(/\[V\s*:\s*(\S+)\]\s*/gi)];
+    if (marked.length) {
+      for (let index = 0; index < marked.length; index++) {
+        const voice = voices.get(marked[index][1]);
+        if (!voice) continue;
+        const start = marked[index].index + marked[index][0].length;
+        const end = marked[index + 1]?.index ?? line.length;
+        voice.lines.push(line.slice(start, end).trim());
+      }
+      currentVoice = null;
+    } else if (currentVoice && line.trim()) {
+      voices.get(currentVoice)?.lines.push(line);
+    }
+  }
+
+  if (!voices.size) {
+    const fields = extractFields(source);
+    const keyIndex = lines.findIndex((line) => /^\s*K\s*:/i.test(line));
+    if (keyIndex < 0) return null;
+    const music = lines.slice(keyIndex + 1).filter((line) => line.trim() && !/^\s*%/.test(line)).join(" ");
+    if (!music.includes("&")) return null;
+    voices.set("1", {
+      id: "1",
+      name: fields.T ? `${fields.T} voice` : "Voice 1",
+      clef: "",
+      lines: [music],
+    });
+  }
+  const fields = extractFields(header.length ? header.join("\n") : source);
+  const sharedHeader = [
+    `X:${fields.X || 1}`,
+    fields.T ? `T:${fields.T}` : null,
+    fields.C ? `C:${fields.C}` : null,
+    fields.M ? `M:${fields.M}` : null,
+    fields.L ? `L:${fields.L}` : null,
+    fields.Q ? `Q:${fields.Q}` : null,
+    fields.K ? `K:${fields.K}` : null,
+  ].filter(Boolean);
+  const parts = [];
+  for (const voice of voices.values()) {
+    const instrument = fields.Inst || inferInstrument(voice.name, voice.clef);
+    const music = voice.lines.filter(Boolean).join("\n");
+    const overlays = splitOverlayVoices(music, fields.L);
+    overlays.forEach((body, index) => {
+      const name = overlays.length > 1 ? `${voice.name} voice ${index + 1}` : voice.name;
+      parts.push([
+        `Part: ${name}`,
+        `Inst: ${instrument}`,
+        ...sharedHeader,
+        body,
+      ].filter(Boolean).join("\n"));
+    });
+  }
+  return `${parts.join("\n\n")}\n`;
+}
+
+function splitOverlayVoices(music, lengthField) {
+  if (!music.includes("&")) return [music];
+  const unit = parseLengthUnit(lengthField);
+  const voices = [];
+  let current = "";
+  const flushBar = (barline = "") => {
+    const segments = current.split("&").map((segment) => segment.trim()).filter(Boolean);
+    if (!segments.length) {
+      current = "";
+      return;
+    }
+    while (voices.length < segments.length) voices.push([]);
+    const durations = segments.map((segment) => abcDurationUnits(segment, unit));
+    const target = Math.max(...durations);
+    segments.forEach((segment, index) => {
+      const padding = target - durations[index];
+      voices[index].push(`${segment}${formatRest(padding, unit)}${barline}`.trim());
+    });
+    for (let index = segments.length; index < voices.length; index++) {
+      voices[index].push(`${formatRest(target, unit)}${barline}`.trim());
+    }
+    current = "";
+  };
+
+  for (const piece of music.split(/(\|)/)) {
+    if (piece === "|") flushBar("|");
+    else current += `${current ? " " : ""}${piece}`;
+  }
+  flushBar();
+  return voices.map((voice) => voice.join(" ").trim()).filter(Boolean);
+}
+
+function parseLengthUnit(value) {
+  const match = String(value || "1/8").match(/(\d+)\s*\/\s*(\d+)/);
+  return match ? Number(match[1]) / Number(match[2]) : 0.125;
+}
+
+function abcDurationUnits(text, unit) {
+  let total = 0;
+  const tokens = text.match(/(?:\[[^\]]+\]|[_=^]?[A-Ga-gz][,']*)(?:\d+)?(?:\/\d*)?/g) || [];
+  for (const token of tokens) {
+    const suffix = token.match(/(\d+)?(?:\/(\d*))?$/);
+    const numerator = Number(suffix?.[1] || 1);
+    const denominator = suffix?.[2] === "" ? 2 : Number(suffix?.[2] || 1);
+    total += (numerator / denominator) * unit;
+  }
+  return total;
+}
+
+function formatRest(duration, unit) {
+  const units = duration / unit;
+  if (units <= 0.001) return "";
+  const rounded = Math.round(units * 16) / 16;
+  if (Math.abs(rounded - Math.round(rounded)) < 0.001) {
+    return ` z${Math.max(1, Math.round(rounded))}`;
+  }
+  const denominator = 16;
+  const numerator = Math.round(rounded * denominator);
+  return ` z${numerator}/${denominator}`;
+}
+
 /**
  * @typedef {{ name: string, transpose: number, instrument?: string, body: string, meter?: string, start: number }} DeskPart
  */
@@ -195,4 +339,18 @@ function stripHeader(body) {
 
 function escapeQuotes(s) {
   return String(s).replace(/"/g, "'");
+}
+
+function readVoiceAttribute(attributes, name) {
+  const match = attributes.match(new RegExp(`${name}\\s*=\\s*"([^"]+)"`, "i"));
+  return match?.[1]?.trim() || "";
+}
+
+function inferInstrument(name, clef = "") {
+  const value = `${name} ${clef}`.toLowerCase();
+  if (/double\s*bass|contrabass/.test(value)) return "contrabass";
+  if (/cello/.test(value)) return "cello";
+  if (/viola|alto/.test(value)) return "viola";
+  if (/violin|fiddle/.test(value)) return "violin";
+  return /bass/.test(value) ? "cello" : "violin";
 }

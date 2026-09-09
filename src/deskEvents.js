@@ -13,6 +13,7 @@ export function normalizePerformanceTracks(tracks) {
         id: `track-${trackIndex}-event-${eventIndex}`,
         trackIndex,
         cmd: "note",
+        instrument: event.instrument,
         pitch: finiteNumber(event.pitch),
         volume: finiteNumber(event.volume),
         cents: finiteNumber(event.cents) ?? 0,
