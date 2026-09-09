@@ -489,18 +489,6 @@ export function expandDeskDecorations(abc) {
     }
   }
 
-  function violinBowCycle(note, duration, seed, amount) {
-    const pitch = Number(note.pitch);
-    const register = Number.isFinite(pitch) ? Math.max(-1, Math.min(1, (pitch - 67) / 24)) : 0;
-    const bowLength = 0.55 + stableUnitNoise(`${seed}:bow-length`) * 0.35;
-    const bowPhase = stableUnitNoise(`${seed}:bow-phase`) * Math.PI * 2;
-    const cycle = Math.sin((duration / bowLength) * Math.PI * 1.6 + bowPhase);
-    const settling = duration > 0.3 ? Math.min(1, (duration - 0.3) / 1.4) : 0;
-    const pressure = cycle * 0.035 * settling;
-    const registerResponse = register * 0.012 * Math.min(1, duration * 2);
-    return 1 + (pressure + registerResponse) * amount;
-  }
-
   out = out.replace(DESK_DECO_RE, (_, name) => {
     const key = name.toLowerCase();
     const def = DESK_DECORATIONS[key];
@@ -1675,6 +1663,20 @@ function dynamicHumanAmount(baseAmount, start, trackIndex, noteIndex) {
     `human-phrase:${trackIndex}:${Math.floor(start / 2)}:${noteIndex % 4}`,
   ) * 0.08;
   return Math.max(0, Math.min(1, baseAmount * (1 + slowBreath + phraseNoise)));
+}
+
+function violinBowCycle(note, duration, seed, amount) {
+  const pitch = Number(note.pitch);
+  const register = Number.isFinite(pitch)
+    ? Math.max(-1, Math.min(1, (pitch - 67) / 24))
+    : 0;
+  const bowLength = 0.55 + stableUnitNoise(`${seed}:bow-length`) * 0.35;
+  const bowPhase = stableUnitNoise(`${seed}:bow-phase`) * Math.PI * 2;
+  const cycle = Math.sin((duration / bowLength) * Math.PI * 1.6 + bowPhase);
+  const settling = duration > 0.3 ? Math.min(1, (duration - 0.3) / 1.4) : 0;
+  const pressure = cycle * 0.035 * settling;
+  const registerResponse = register * 0.012 * Math.min(1, duration * 2);
+  return 1 + (pressure + registerResponse) * amount;
 }
 
 function familyDurationDrift(family, instrument) {

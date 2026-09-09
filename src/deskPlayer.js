@@ -296,7 +296,7 @@ export function createTestingPlayer({
       (selectable) =>
         selectable.absEl?.abcelem?.el_type === "note" && selectable.svgEl,
     );
-    const used = new Set();
+    let fallbackIndex = 0;
     for (const event of noteEvents) {
       const svgElements = selectables
         .filter((selectable) => {
@@ -304,7 +304,6 @@ export function createTestingPlayer({
           return (
             abc &&
             selectable.svgEl &&
-            !used.has(selectable) &&
             event.startChar != null &&
             event.endChar != null &&
             abc.startChar < event.endChar &&
@@ -312,14 +311,12 @@ export function createTestingPlayer({
             abc.el_type === "note"
           );
         })
-        .map((selectable) => {
-          used.add(selectable);
-          return selectable.svgEl;
-        });
+        .map((selectable) => selectable.svgEl);
       if (!svgElements.length) {
-        const fallback = noteSelectables.find((selectable) => !used.has(selectable));
+        const fallback =
+          noteSelectables[fallbackIndex % noteSelectables.length];
+        fallbackIndex++;
         if (fallback) {
-          used.add(fallback);
           svgElements.push(fallback.svgEl);
         }
       }
