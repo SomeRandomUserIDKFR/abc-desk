@@ -722,6 +722,7 @@ class CursorControl {
         end: current?.end ?? -Infinity,
       });
     }
+    const mappedEvents = [];
     for (const event of events) {
       const start = (Number(event.start) || 0) * secondsPerWholeNote;
       const end =
@@ -737,35 +738,38 @@ class CursorControl {
           const classes = element.getAttribute("class") ?? "";
           const line = classes.match(/\babcjs-l(-?\d+)\b/)?.[1];
           const measure = classes.match(/\babcjs-m(-?\d+)\b/)?.[1];
-          const timeline = line == null || measure == null
-            ? null
-            : measures.get(`${line}:${measure}`);
-          if (timeline) {
-            timeline.start = Math.min(timeline.start, start);
-            timeline.end = Math.max(timeline.end, end);
+          if (line != null && measure != null && measures.has(`${line}:${measure}`)) {
+            mappedEvents.push({ key: `${line}:${measure}`, start, end });
           }
         }
       }
     }
-    const timelines = [...measures.values()]
-      .filter((measure) => Number.isFinite(measure.start) && measure.end > measure.start)
-      .map((measure) => ({ ...measure, width: Math.max(1, measure.right - measure.left) }));
-    const lines = new Map();
-    for (const timeline of timelines) {
-      const line = lines.get(timeline.line) ?? [];
-      line.push(timeline);
-      lines.set(timeline.line, line);
-    }
-    for (const line of lines.values()) {
-      line.sort((left, right) => left.start - right.start);
-      for (let index = 0; index < line.length - 1; index += 1) {
-        const nextStart = line[index + 1].start;
-        if (nextStart > line[index].start) {
-          line[index].end = nextStart;
-        }
+    mappedEvents.sort((left, right) => left.start - right.start);
+    const occurrences = [];
+    for (const event of mappedEvents) {
+      const previous = occurrences[occurrences.length - 1];
+      if (previous?.key === event.key) {
+        previous.end = Math.max(previous.end, event.end);
+      } else {
+        occurrences.push({ ...event });
       }
     }
-    return timelines;
+    for (let index = 0; index < occurrences.length - 1; index += 1) {
+      const nextStart = occurrences[index + 1].start;
+      if (nextStart > occurrences[index].start) {
+        occurrences[index].end = nextStart;
+      }
+    }
+    return occurrences
+      .map((occurrence) => {
+        const measure = measures.get(occurrence.key);
+        return {
+          ...measure,
+          ...occurrence,
+          width: Math.max(1, measure.right - measure.left),
+        };
+      })
+      .filter((measure) => measure.end > measure.start);
   }
 }
 
