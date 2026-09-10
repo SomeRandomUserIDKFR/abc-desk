@@ -572,6 +572,7 @@ class CursorControl {
     this.experimental = experimental;
     this.experimentalActive = new Map();
     this.measureCursors = [];
+    this.measureCursorNodes = new Map();
     this.measureTimelines = [];
   }
 
@@ -600,23 +601,30 @@ class CursorControl {
   onProgress(seconds) {
     const svg = paper.querySelector("svg");
     if (!svg || !this.measureTimelines.length) return;
-    this.measureCursors.forEach((cursor) => cursor.remove());
-    this.measureCursors = [];
+    const active = new Set();
     for (const measure of this.measureTimelines) {
-      if (seconds < measure.start || seconds > measure.end) continue;
+      let cursor = this.measureCursorNodes.get(measure);
+      if (!cursor) {
+        cursor = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        cursor.setAttribute("class", "abcjs-measure-cursor");
+        svg.appendChild(cursor);
+        this.measureCursorNodes.set(measure, cursor);
+      }
+      const visible = seconds >= measure.start && seconds <= measure.end;
+      cursor.style.display = visible ? "" : "none";
+      if (!visible) continue;
+      active.add(cursor);
       const ratio = Math.max(
         0,
         Math.min(1, (seconds - measure.start) / Math.max(0.001, measure.end - measure.start)),
       );
-      const cursor = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      cursor.setAttribute("class", "abcjs-measure-cursor");
-      cursor.setAttribute("x1", String(measure.left + measure.width * ratio));
-      cursor.setAttribute("x2", String(measure.left + measure.width * ratio));
+      const x = measure.left + measure.width * ratio;
+      cursor.setAttribute("x1", String(x));
+      cursor.setAttribute("x2", String(x));
       cursor.setAttribute("y1", String(measure.top));
       cursor.setAttribute("y2", String(measure.bottom));
-      svg.appendChild(cursor);
-      this.measureCursors.push(cursor);
     }
+    this.measureCursors = [...active];
   }
 
   onEvent(event) {
@@ -657,6 +665,8 @@ class CursorControl {
     this.experimentalActive.clear();
     this.measureCursors.forEach((cursor) => cursor.remove());
     this.measureCursors = [];
+    this.measureCursorNodes.forEach((cursor) => cursor.remove());
+    this.measureCursorNodes.clear();
     this.measureTimelines = [];
     paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
       el.classList.remove("abcjs-highlight");
