@@ -177,7 +177,6 @@ export function createTestingPlayer({
       );
       const graph = buildPerformanceGraph(tracks, currentAudioParams?.callbackContext);
       attachVisualElements(events, visualObj);
-      events = groupSimultaneousEvents(events);
       diagnostics = summarizeEvents(tracks, {}, graph);
       paused = false;
       playbackEnded = false;
@@ -607,38 +606,6 @@ function scheduleViolinVibrato(
     rateParam.linearRampToValueAtTime(baseRate * 0.96, start + duration);
     depthParam.linearRampToValueAtTime(0.00008, start + duration);
   }
-}
-
-function groupSimultaneousEvents(noteEvents) {
-  const grouped = [];
-  // Human/player timing can separate one written beat by a few hundredths
-  // of a whole note; keep those voices in one visual callback.
-  const tolerance = 0.04;
-  for (const event of [...noteEvents].sort((a, b) => a.start - b.start)) {
-    const previous = grouped[grouped.length - 1];
-    if (
-      previous &&
-      Math.abs((Number(event.start) || 0) - (Number(previous.start) || 0)) <= tolerance
-    ) {
-      previous.elements = mergeEventElements(previous.elements, event.elements);
-      previous.duration = Math.max(
-        Number(previous.duration) || 0,
-        Number(event.duration) || 0,
-      );
-      previous.end = Math.max(Number(previous.end) || 0, Number(event.end) || 0);
-    } else {
-      grouped.push({ ...event });
-    }
-  }
-  return grouped;
-}
-
-function mergeEventElements(left = [], right = []) {
-  const merged = [...left];
-  for (const set of right) {
-    if (!merged.includes(set)) merged.push(set);
-  }
-  return merged;
 }
 
 function fillRoomImpulse(impulse, room) {
