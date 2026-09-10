@@ -1592,6 +1592,8 @@ function applyHumanization(tracks, humanize) {
       const centsNoise = stableSignedNoise(`${seedBase}:cents`);
       const mistakeNoise = stableUnitNoise(`${seedBase}:mistake`);
       const bowedString = isBowedStringInstrument(note.instrument);
+      const lowRegister = Number(note.pitch) <= 55;
+      const deepBass = Number(note.pitch) <= 43;
       const bowDirection = noteIndex % 2 === 0 ? 1 : -1;
       const bowPressureNoise = stableSignedNoise(`${seedBase}:bow-pressure`);
       const bowReleaseNoise = stableSignedNoise(`${seedBase}:bow-release`);
