@@ -608,8 +608,8 @@ class CursorControl {
       visibleMeasures.length > 1 &&
       visibleMeasures.every(
         (measure) =>
-          Math.abs(measure.start - visibleMeasures[0].start) <= 0.08 &&
-          Math.abs(measure.end - visibleMeasures[0].end) <= 0.08,
+          Math.abs(measure.start - visibleMeasures[0].start) <= 0.25 &&
+          Math.abs(measure.end - visibleMeasures[0].end) <= 0.25,
       );
     const displayMeasures = synchronized
       ? [
