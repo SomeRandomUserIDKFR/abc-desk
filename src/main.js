@@ -605,19 +605,20 @@ class CursorControl {
       (measure) => seconds >= measure.start && seconds <= measure.end,
     );
     const synchronized =
-      visibleMeasures.length > 1 &&
+      visibleMeasures.length > 0 &&
+      (visibleMeasures.length <= 1 ||
       visibleMeasures.every(
         (measure) =>
           Math.abs(measure.start - visibleMeasures[0].start) <= 0.25 &&
           Math.abs(measure.end - visibleMeasures[0].end) <= 0.25,
-      );
+      ));
     const displayMeasures = synchronized
       ? [
           {
             ...visibleMeasures[0],
             top: Math.min(...visibleMeasures.map((measure) => measure.top)),
             bottom: Math.max(...visibleMeasures.map((measure) => measure.bottom)),
-            key: "synchronized",
+            key: "primary",
           },
         ]
       : visibleMeasures.map((measure) => ({ ...measure, key: measure }));
