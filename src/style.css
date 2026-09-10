@@ -361,6 +361,41 @@ button.primary:hover {
   fill: rgba(232, 196, 104, 0.35);
 }
 
+.abcjs-highlight.abcjs-passive-echo,
+.abcjs-cursor.abcjs-cursor-passive-echo,
+.abcjs-measure-cursor.abcjs-cursor-passive-echo {
+  fill: rgba(190, 232, 255, 0.52);
+  stroke: #bdeaff;
+}
+
+.abcjs-highlight.abcjs-passive-flashback,
+.abcjs-cursor.abcjs-cursor-passive-flashback,
+.abcjs-measure-cursor.abcjs-cursor-passive-flashback {
+  fill: rgba(255, 244, 174, 0.58);
+  stroke: #fff0a6;
+}
+
+.abcjs-highlight.abcjs-passive-foreshadow,
+.abcjs-cursor.abcjs-cursor-passive-foreshadow,
+.abcjs-measure-cursor.abcjs-cursor-passive-foreshadow {
+  fill: rgba(112, 36, 76, 0.52);
+  stroke: #7d315f;
+}
+
+.abcjs-highlight.abcjs-passive-reverseflashback,
+.abcjs-cursor.abcjs-cursor-passive-reverseflashback,
+.abcjs-measure-cursor.abcjs-cursor-passive-reverseflashback {
+  fill: rgba(79, 45, 112, 0.52);
+  stroke: #906bd0;
+}
+
+.abcjs-highlight.abcjs-passive-resolution,
+.abcjs-cursor.abcjs-cursor-passive-resolution,
+.abcjs-measure-cursor.abcjs-cursor-passive-resolution {
+  fill: rgba(95, 210, 186, 0.48);
+  stroke: #69d9c0;
+}
+
 .performance-timeline {
   display: grid;
   gap: 0.45rem;
@@ -444,6 +479,37 @@ button.primary:hover {
   height: 0.3rem;
   background: #d98a78;
   opacity: 0.85;
+}
+
+.timeline-passives .timeline-segment {
+  top: 0.95rem;
+  height: 0.42rem;
+  opacity: 0.85;
+}
+
+.timeline-passives .passive-echo,
+.timeline-key i.passive-echo {
+  background: #bdeaff;
+}
+
+.timeline-passives .passive-flashback,
+.timeline-key i.passive-flashback {
+  background: #fff0a6;
+}
+
+.timeline-passives .passive-foreshadow,
+.timeline-key i.passive-foreshadow {
+  background: #7d315f;
+}
+
+.timeline-passives .passive-reverseflashback,
+.timeline-key i.passive-reverseflashback {
+  background: #906bd0;
+}
+
+.timeline-passives .passive-resolution,
+.timeline-key i.passive-resolution {
+  background: #69d9c0;
 }
 
 .timeline-playhead {

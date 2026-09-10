@@ -317,6 +317,7 @@ app.innerHTML = `
                   <div id="timeline-phrases" class="timeline-layer timeline-phrases"></div>
                   <div id="timeline-expression" class="timeline-layer timeline-expression"></div>
                   <div id="timeline-tempo" class="timeline-layer timeline-tempo"></div>
+                  <div id="timeline-passives" class="timeline-layer timeline-passives"></div>
                   <div id="timeline-playhead" class="timeline-playhead"></div>
                 </div>
                 <div id="timeline-legend" class="timeline-legend"></div>
@@ -371,6 +372,7 @@ const performanceTimeline = document.querySelector("#performance-timeline");
 const timelinePhrases = document.querySelector("#timeline-phrases");
 const timelineExpression = document.querySelector("#timeline-expression");
 const timelineTempo = document.querySelector("#timeline-tempo");
+const timelinePassives = document.querySelector("#timeline-passives");
 const timelinePlayhead = document.querySelector("#timeline-playhead");
 const timelineLegend = document.querySelector("#timeline-legend");
 const timelineTime = document.querySelector("#timeline-time");
@@ -717,14 +719,25 @@ class CursorControl {
   onEvent(event) {
     if (!event?.elements?.length) return;
     const eventSeconds = Number(event.playbackSeconds);
+    const passiveType = String(event.timelinePassive ?? "").toLowerCase();
+    const passiveClass = passiveType
+      ? `abcjs-passive-${passiveType.replace(/[^a-z0-9-]/g, "-")}`
+      : "";
     const sameMoment =
       this.experimental &&
       Number.isFinite(eventSeconds) &&
       this.lastEventSeconds != null &&
       Math.abs(eventSeconds - this.lastEventSeconds) <= 0.04;
     if (!sameMoment) {
-      paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
+      paper.querySelectorAll(".abcjs-highlight, [class*='abcjs-passive-']").forEach((el) => {
         el.classList.remove("abcjs-highlight");
+        el.classList.remove(
+          "abcjs-passive-echo",
+          "abcjs-passive-flashback",
+          "abcjs-passive-foreshadow",
+          "abcjs-passive-reverseflashback",
+          "abcjs-passive-resolution",
+        );
       });
       this.experimentalActive.clear();
     }
@@ -734,6 +747,7 @@ class CursorControl {
         const targets = [el, ...el.querySelectorAll?.("path, ellipse, line, polygon, polyline, text") ?? []];
         for (const target of targets) {
           target.classList.add("abcjs-highlight");
+          if (passiveClass) target.classList.add(passiveClass);
           if (this.experimental && event.highlightDuration) {
             const token = {};
             this.experimentalActive.set(target, token);
@@ -741,6 +755,7 @@ class CursorControl {
               if (this.experimentalActive.get(target) !== token) return;
               this.experimentalActive.delete(target);
               target.classList.remove("abcjs-highlight");
+              if (passiveClass) target.classList.remove(passiveClass);
             }, event.highlightDuration);
           }
         }
@@ -748,11 +763,31 @@ class CursorControl {
     }
     const cursor = paper.querySelector(".abcjs-cursor");
     if (cursor) {
+      cursor.classList.remove(
+        "abcjs-cursor-passive-echo",
+        "abcjs-cursor-passive-flashback",
+        "abcjs-cursor-passive-foreshadow",
+        "abcjs-cursor-passive-reverseflashback",
+        "abcjs-cursor-passive-resolution",
+      );
+      if (passiveType) cursor.classList.add(`abcjs-cursor-passive-${passiveType}`);
       cursor.setAttribute("x1", event.left - 2);
       cursor.setAttribute("x2", event.left - 2);
       cursor.setAttribute("y1", event.top);
       cursor.setAttribute("y2", event.top + event.height);
     }
+    this.measureCursorNodes.forEach((measureCursor) => {
+      measureCursor.classList.remove(
+        "abcjs-cursor-passive-echo",
+        "abcjs-cursor-passive-flashback",
+        "abcjs-cursor-passive-foreshadow",
+        "abcjs-cursor-passive-reverseflashback",
+        "abcjs-cursor-passive-resolution",
+      );
+      if (passiveType) {
+        measureCursor.classList.add(`abcjs-cursor-passive-${passiveType}`);
+      }
+    });
   }
 
   onFinished() {
@@ -769,11 +804,25 @@ class CursorControl {
     this.measureCursorStates.clear();
     this.measureTimelines = [];
     this.noteTimelines = [];
-    paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
+    paper.querySelectorAll(".abcjs-highlight, [class*='abcjs-passive-']").forEach((el) => {
       el.classList.remove("abcjs-highlight");
+      el.classList.remove(
+        "abcjs-passive-echo",
+        "abcjs-passive-flashback",
+        "abcjs-passive-foreshadow",
+        "abcjs-passive-reverseflashback",
+        "abcjs-passive-resolution",
+      );
     });
     const cursor = paper.querySelector(".abcjs-cursor");
     if (cursor) {
+      cursor.classList.remove(
+        "abcjs-cursor-passive-echo",
+        "abcjs-cursor-passive-flashback",
+        "abcjs-cursor-passive-foreshadow",
+        "abcjs-cursor-passive-reverseflashback",
+        "abcjs-cursor-passive-resolution",
+      );
       cursor.setAttribute("x1", 0);
       cursor.setAttribute("x2", 0);
       cursor.setAttribute("y1", 0);
@@ -1176,12 +1225,24 @@ function renderPerformanceTimeline(metrics) {
   timelinePhrases.innerHTML = "";
   timelineExpression.innerHTML = "";
   timelineTempo.innerHTML = "";
+  timelinePassives.innerHTML = "";
   for (const phrase of graph.phrases ?? []) addRange(timelinePhrases, phrase, "phrase");
   addExpressionGraph(
     timelineExpression,
-    (graph.events ?? []).filter((note) => note.type === "note" || note.cmd === "note"),
+    (graph.events ?? []).filter(
+      (note) =>
+        (note.type === "note" || note.cmd === "note") &&
+        !note.timelinePassive,
+    ),
   );
   for (const curve of graph.tempo ?? []) addRange(timelineTempo, curve, "tempo");
+  for (const passive of graph.timelinePassives ?? []) {
+    addRange(
+      timelinePassives,
+      passive,
+      `passive passive-${String(passive.type).toLowerCase()}`,
+    );
+  }
 
   timelineLegend.innerHTML = "";
   const labels = [
@@ -1194,6 +1255,13 @@ function renderPerformanceTimeline(metrics) {
     item.className = "timeline-key";
     item.innerHTML = `<i class="${className}"></i>`;
     item.append(document.createTextNode(label));
+    timelineLegend.appendChild(item);
+  }
+  for (const passive of graph.timelinePassives ?? []) {
+    const item = document.createElement("span");
+    item.className = "timeline-key";
+    item.innerHTML = `<i class="passive-${String(passive.type).toLowerCase()}"></i>`;
+    item.append(document.createTextNode(passive.label ?? passive.type));
     timelineLegend.appendChild(item);
   }
   for (const [index, tone] of (graph.tone ?? []).entries()) {

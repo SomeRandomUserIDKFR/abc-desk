@@ -14,6 +14,16 @@ const MIDI_PROGRAM_LINE_RE = /^%%\s*MIDI\s+program\b(.*)$/i;
 const DRUM_FRIENDLY_RE = /^(Drum1|Drum2)\s*:\s*(.*)$/i;
 const DRUM_ENCODED_RE = /^(?:%%|I:)\s*desk-drum(1|2)\s+(.+)$/i;
 const DRUM_MARKER_RE = /^\s*(?:!([oOpP])!|([oOpP]))(?=$|[\s|:\]\)\}\/,;])/;
+const TIMELINE_PASSIVE_RE =
+  /^(Echo|Flashback|Foreshadow|ReverseFlashback|Resolution)\s*:\s*(.*)$/i;
+
+export const TIMELINE_PASSIVE_TYPES = Object.freeze({
+  echo: { label: "Echo", color: "ice-blue" },
+  flashback: { label: "Flashback", color: "light-yellow" },
+  foreshadow: { label: "Foreshadow", color: "dark-red" },
+  reverseflashback: { label: "ReverseFlashback", color: "dark-purple" },
+  resolution: { label: "Resolution", color: "blue-green" },
+});
 
 /**
  * Composition decorations beyond stock abcjs.
@@ -598,6 +608,37 @@ export function filterDecorationWarnings(warnings) {
   });
 }
 
+function parseTimelinePassive(kind, rawValue, sourceOffset, line) {
+  const type = kind.toLowerCase();
+  const value = String(rawValue ?? "").trim();
+  const delay = parseMusicalAmount(
+    value.match(/(?:delay|offset|at)\s*[:=]?\s*([0-9]+(?:\s*\/\s*[0-9]+)?(?:\.[0-9]+)?)/i)?.[1] ??
+      value.match(/[0-9]+(?:\s*\/\s*[0-9]+)?(?:\.[0-9]+)?/)?.[0],
+  );
+  return {
+    type,
+    label: TIMELINE_PASSIVE_TYPES[type]?.label ?? kind,
+    value,
+    sourceOffset,
+    line,
+    delay: type === "echo" ? delay ?? 0.25 : delay ?? 0,
+    visualOnly: type !== "echo",
+  };
+}
+
+function parseMusicalAmount(raw) {
+  if (raw == null || raw === "") return undefined;
+  const value = String(raw).trim();
+  const fraction = value.match(/^([0-9]+(?:\.[0-9]+)?)\s*\/\s*([0-9]+(?:\.[0-9]+)?)$/);
+  if (fraction) {
+    const numerator = Number(fraction[1]);
+    const denominator = Number(fraction[2]);
+    if (numerator > 0 && denominator > 0) return numerator / denominator;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
 /**
  * Parse Desk dialect headers; return clean ABC for abcjs + resolved meta.
  * Inst: / %%desk-instrument / %%MIDI program are equivalent instrument specs.
@@ -607,6 +648,7 @@ export function parseDeskHeaders(source) {
   const lines = source.split(/\r?\n/);
   const kept = [];
   const warnings = [];
+  const timelinePassives = [];
   let instrumentRaw = null;
   let toneRaw = null;
   let humanRaw = null;
@@ -622,8 +664,24 @@ export function parseDeskHeaders(source) {
   /** @type {number[]} */
   const midiProgramsFromDirectives = [];
 
-  for (const line of lines) {
+  let sourceOffset = 0;
+  for (const [lineIndex, line] of lines.entries()) {
+    const lineStart = sourceOffset;
+    sourceOffset += line.length + 1;
     const trimmed = line.trim();
+
+    const passive = trimmed.match(TIMELINE_PASSIVE_RE);
+    if (passive) {
+      timelinePassives.push(
+        parseTimelinePassive(
+          passive[1],
+          passive[2],
+          lineStart,
+          lineIndex + 1,
+        ),
+      );
+      continue;
+    }
 
     const friendly = trimmed.match(FRIENDLY_RE);
     if (friendly) {
@@ -704,7 +762,6 @@ export function parseDeskHeaders(source) {
       kept.push(line);
       continue;
     }
-
     kept.push(line);
   }
 
@@ -823,6 +880,10 @@ export function parseDeskHeaders(source) {
       drum1Raw,
       drum2Raw,
       decorationsUsed,
+      timelinePassives,
+      // Keep the short alias useful to consumers that do not need the
+      // timeline-specific name, while retaining the descriptive field.
+      passives: timelinePassives,
     },
     warnings,
   };
@@ -2048,6 +2109,7 @@ export function deskAudioParams(meta) {
       room: meta.room,
       distance: meta.distance,
       players: meta.players,
+      timelinePassives: meta.timelinePassives ?? meta.passives ?? [],
       adaptiveStrings: false,
       violinVibrato: forceInstrument === "violin",
     },
@@ -2062,6 +2124,8 @@ export function deskAudioParams(meta) {
         tone: ctx?.tone ?? meta.tone,
         humanize: ctx?.humanize ?? meta.humanize,
         players: ctx?.players ?? meta.players,
+        timelinePassives:
+          ctx?.timelinePassives ?? meta.timelinePassives ?? meta.passives ?? [],
         adaptiveStrings: ctx?.adaptiveStrings ?? false,
         expressionExpansion: ctx?.expressionExpansion ?? false,
         experimentalPerformance: ctx?.experimentalPerformance ?? false,
@@ -2112,6 +2176,13 @@ export function deskStatusFragment(meta) {
   }
   if (meta.players) {
     parts.push(`Players ${meta.players}`);
+  }
+  if (meta.timelinePassives?.length) {
+    parts.push(
+      meta.timelinePassives
+        .map((passive) => passive.label ?? passive.type)
+        .join(", "),
+    );
   }
   if (meta.distance != null) {
     parts.push(`Distance ${meta.distance}`);

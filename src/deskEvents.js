@@ -72,6 +72,10 @@ export function normalizePerformanceTracks(tracks) {
 
 export function buildPerformanceGraph(tracks, context = {}) {
   const notes = tracks.flat();
+  const timelinePassives = buildTimelinePassiveRanges(
+    notes,
+    context.timelinePassives ?? context.passives,
+  );
   const articulations = notes.reduce((counts, note) => {
     const key = note.articulation ?? "unknown";
     counts[key] = (counts[key] ?? 0) + 1;
@@ -130,6 +134,7 @@ export function buildPerformanceGraph(tracks, context = {}) {
     tone,
     room,
     tempo,
+    timelinePassives,
     articulations,
     player: {
       count: Math.max(1, Number(context.players) || 1),
@@ -139,6 +144,66 @@ export function buildPerformanceGraph(tracks, context = {}) {
       })),
     },
   };
+}
+
+/**
+ * Create visual replay events for timeline passives. Echoes are shifted by
+ * their musical delay; the other passives remain visual-only annotations.
+ */
+export function createTimelinePassiveEvents(events, passives = []) {
+  const sourceEvents = events.filter(
+    (event) => event?.cmd === "note" && !event.timelinePassive,
+  );
+  const replicas = [];
+  for (const passive of passives) {
+    const type = String(passive?.type ?? "").toLowerCase();
+    if (!type || !sourceEvents.length) continue;
+    const delay =
+      type === "echo"
+        ? Math.max(0, finiteNumber(passive.delay) ?? 0.25)
+        : Math.max(0, finiteNumber(passive.delay) ?? 0);
+    for (const [index, event] of sourceEvents.entries()) {
+      const start = (finiteNumber(event.start) ?? 0) + delay;
+      const duration = eventDuration(event);
+      replicas.push({
+        ...event,
+        id: `${event.id}-passive-${type}-${index}`,
+        start,
+        end: start + duration,
+        duration,
+        timelinePassive: type,
+        passiveReplica: true,
+        visualOnly: type !== "echo",
+        ensembleReplica: false,
+      });
+    }
+  }
+  return replicas;
+}
+
+function buildTimelinePassiveRanges(notes, passives = []) {
+  const baseNotes = notes.filter((event) => event?.cmd === "note");
+  if (!baseNotes.length) return [];
+  const duration = Math.max(...baseNotes.map(eventEnd), 0);
+  return passives
+    .map((passive) => {
+      const type = String(passive?.type ?? "").toLowerCase();
+      if (!type) return null;
+      const delay =
+        type === "echo"
+          ? Math.max(0, finiteNumber(passive.delay) ?? 0.25)
+          : Math.max(0, finiteNumber(passive.delay) ?? 0);
+      return {
+        type,
+        label: passive.label ?? type,
+        value: passive.value ?? "",
+        delay,
+        start: delay,
+        end: duration + delay,
+        visualOnly: type !== "echo",
+      };
+    })
+    .filter(Boolean);
 }
 
 function normalizeArticulation(value) {
@@ -166,4 +231,16 @@ function createPhrase(notes) {
 function finiteNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
+}
+
+function eventDuration(event) {
+  return Math.max(
+    0.04,
+    finiteNumber(event?.duration) ??
+      (finiteNumber(event?.end) ?? 0) - (finiteNumber(event?.start) ?? 0),
+  );
+}
+
+function eventEnd(event) {
+  return (finiteNumber(event?.start) ?? 0) + eventDuration(event);
 }

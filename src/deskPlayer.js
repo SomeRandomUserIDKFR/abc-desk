@@ -4,7 +4,11 @@
  * The current backend delegates to abcjs, but the application only depends on
  * this focused interface so a purpose-built scheduler can replace it later.
  */
-import { buildPerformanceGraph, normalizePerformanceTracks } from "./deskEvents.js";
+import {
+  buildPerformanceGraph,
+  createTimelinePassiveEvents,
+  normalizePerformanceTracks,
+} from "./deskEvents.js";
 
 export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
   const supportsAudio = abcjs.synth.supportsAudio();
@@ -177,7 +181,16 @@ export function createTestingPlayer({
       );
       const graph = buildPerformanceGraph(tracks, currentAudioParams?.callbackContext);
       attachVisualElements(events, visualObj);
+      events = events.concat(
+        createTimelinePassiveEvents(
+          events,
+          currentAudioParams?.callbackContext?.timelinePassives,
+        ),
+      );
       diagnostics = summarizeEvents(tracks, {}, graph);
+      diagnostics.duration = Math.round(
+        Math.max(...events.map(eventEnd), 0) * 1000,
+      ) / 1000;
       paused = false;
       playbackEnded = false;
     },
@@ -1025,6 +1038,7 @@ function summarizeEvents(tracks, counts = {}, graph = null) {
           expression: graph.expression,
           tone: graph.tone,
           tempo: graph.tempo,
+          timelinePassives: graph.timelinePassives,
           articulations: graph.articulations,
         }
       : null,
