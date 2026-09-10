@@ -473,8 +473,14 @@ export function createTestingPlayer({
       const playerGain = context.createGain();
       const playerPan = context.createStereoPanner();
       const playerTone = context.createBiquadFilter();
+      const velocityTone = context.createBiquadFilter();
       const lowBody = context.createBiquadFilter();
       const bowTexture = context.createBiquadFilter();
+      const bowed =
+        performanceContext?.forceInstrument === "violin" ||
+        performanceContext?.forceInstrument === "viola" ||
+        performanceContext?.forceInstrument === "cello" ||
+        performanceContext?.forceInstrument === "contrabass";
       const variation = Math.min(0.08, (playerCount - 1) * 0.012);
       // Keep larger sections full without letting layered replicas dominate.
       const ensembleScale = 1 / Math.sqrt(playerCount);
@@ -484,6 +490,9 @@ export function createTestingPlayer({
       playerTone.frequency.value = 2100 + Math.sin((index + 1) * 1.73) * 260;
       playerTone.Q.value = 0.65;
       playerTone.gain.value = Math.sin((index + 1) * 2.91) * 1.15;
+      velocityTone.type = "highshelf";
+      velocityTone.frequency.value = bowed ? 3600 : 5200;
+      velocityTone.gain.value = 0;
       lowBody.type = "lowshelf";
       lowBody.frequency.value = 165;
       lowBody.gain.value =
@@ -492,11 +501,6 @@ export function createTestingPlayer({
         0,
         Math.min(1,         Number(performanceContext?.humanize?.amount ?? 0) * 2),
       );
-      const bowed =
-        performanceContext?.forceInstrument === "violin" ||
-        performanceContext?.forceInstrument === "viola" ||
-        performanceContext?.forceInstrument === "cello" ||
-        performanceContext?.forceInstrument === "contrabass";
       bowTexture.type = "peaking";
       bowTexture.frequency.value = 2800 + Math.sin((index + 1) * 1.37) * 220;
       bowTexture.Q.value = 0.7;
@@ -516,10 +520,19 @@ export function createTestingPlayer({
       source
         .connect(playerGain)
         .connect(playerTone)
+        .connect(velocityTone)
         .connect(lowBody)
         .connect(bowTexture)
         .connect(playerPan)
         .connect(vibratoInput ?? input);
+      if (bowed) {
+        scheduleVelocityBrightness(
+          context,
+          velocityTone.gain,
+          noteEvents,
+          secondsPerWholeNote,
+        );
+      }
     });
     if (
       vibratoInput &&
@@ -562,6 +575,28 @@ export function createTestingPlayer({
     };
   }
 
+}
+
+function scheduleVelocityBrightness(
+  context,
+  gainParam,
+  noteEvents,
+  wholeNoteSeconds,
+) {
+  const now = context.currentTime;
+  gainParam.cancelScheduledValues(now);
+  gainParam.setValueAtTime(0, now);
+  for (const event of noteEvents) {
+    const start = now + Math.max(0, Number(event.start) || 0) * wholeNoteSeconds;
+    const duration = Math.max(0.06, eventDuration(event) * wholeNoteSeconds);
+    const velocity = Math.max(0, Math.min(1, (Number(event.volume) || 80) / 127));
+    const brightness = -0.35 + velocity * 3.1;
+    const attack = Math.min(0.035, duration * 0.18);
+    gainParam.setValueAtTime(0, start);
+    gainParam.linearRampToValueAtTime(brightness, start + attack);
+    gainParam.linearRampToValueAtTime(brightness * 0.72, start + duration * 0.72);
+    gainParam.linearRampToValueAtTime(0, start + duration);
+  }
 }
 
 function scheduleViolinVibrato(
