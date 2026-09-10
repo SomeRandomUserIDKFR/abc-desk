@@ -591,10 +591,11 @@ class CursorControl {
 
   onEvent(event) {
     if (!event?.elements?.length) return;
-    if (!this.experimental) {
-      paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
-        el.classList.remove("abcjs-highlight");
-      });
+    paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
+      el.classList.remove("abcjs-highlight");
+    });
+    if (this.experimental) {
+      this.experimentalActive.clear();
     }
     for (const set of event.elements) {
       for (const el of set) {
