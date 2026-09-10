@@ -350,6 +350,13 @@ button.primary:hover {
   stroke-width: 2;
 }
 
+.abcjs-measure-cursor {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
 .abcjs-highlight {
   fill: rgba(232, 196, 104, 0.35);
 }

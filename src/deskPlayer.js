@@ -251,7 +251,7 @@ export function createTestingPlayer({
         currentAudioParams?.callbackContext,
         events,
       );
-      cursorControl.onStart();
+      cursorControl.onStart({ events, secondsPerWholeNote });
       pausedSeconds = 0;
       playbackEnded = false;
       scheduleCursor(0);
@@ -268,6 +268,10 @@ export function createTestingPlayer({
   }
 
   function scheduleCursor(fromSeconds) {
+    const startedAt = performance.now() - fromSeconds * 1000;
+    timers.push(window.setInterval(() => {
+      cursorControl.onProgress((performance.now() - startedAt) / 1000);
+    }, 33));
     for (const event of events) {
       const eventSeconds = (Number(event.start) || 0) * secondsPerWholeNote;
       if (eventSeconds < fromSeconds) continue;

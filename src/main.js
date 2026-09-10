@@ -571,9 +571,11 @@ class CursorControl {
     this.beatSubdivisions = 2;
     this.experimental = experimental;
     this.experimentalActive = new Map();
+    this.measureCursors = [];
+    this.measureTimelines = [];
   }
 
-  onStart() {
+  onStart({ events = [], secondsPerWholeNote = 2 } = {}) {
     this.experimentalActive.clear();
     const svg = paper.querySelector("svg");
     if (!svg) return;
@@ -586,6 +588,34 @@ class CursorControl {
       cursor.setAttributeNS(null, "x2", "0");
       cursor.setAttributeNS(null, "y2", "0");
       svg.appendChild(cursor);
+    }
+    this.measureTimelines = this.buildMeasureTimelines(
+      svg,
+      events,
+      secondsPerWholeNote,
+    );
+    this.onProgress(0);
+  }
+
+  onProgress(seconds) {
+    const svg = paper.querySelector("svg");
+    if (!svg || !this.measureTimelines.length) return;
+    this.measureCursors.forEach((cursor) => cursor.remove());
+    this.measureCursors = [];
+    for (const measure of this.measureTimelines) {
+      if (seconds < measure.start || seconds > measure.end) continue;
+      const ratio = Math.max(
+        0,
+        Math.min(1, (seconds - measure.start) / Math.max(0.001, measure.end - measure.start)),
+      );
+      const cursor = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      cursor.setAttribute("class", "abcjs-measure-cursor");
+      cursor.setAttribute("x1", String(measure.left + measure.width * ratio));
+      cursor.setAttribute("x2", String(measure.left + measure.width * ratio));
+      cursor.setAttribute("y1", String(measure.top));
+      cursor.setAttribute("y2", String(measure.bottom));
+      svg.appendChild(cursor);
+      this.measureCursors.push(cursor);
     }
   }
 
@@ -625,6 +655,9 @@ class CursorControl {
 
   onFinished() {
     this.experimentalActive.clear();
+    this.measureCursors.forEach((cursor) => cursor.remove());
+    this.measureCursors = [];
+    this.measureTimelines = [];
     paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
       el.classList.remove("abcjs-highlight");
     });
@@ -635,6 +668,55 @@ class CursorControl {
       cursor.setAttribute("y1", 0);
       cursor.setAttribute("y2", 0);
     }
+  }
+
+  buildMeasureTimelines(svg, events, secondsPerWholeNote) {
+    const measures = new Map();
+    for (const note of svg.querySelectorAll(".abcjs-note")) {
+      const classes = note.getAttribute("class") ?? "";
+      const line = classes.match(/\babcjs-l(-?\d+)\b/)?.[1];
+      const measure = classes.match(/\babcjs-m(-?\d+)\b/)?.[1];
+      if (line == null || measure == null) continue;
+      const box = note.getBBox();
+      const key = `${line}:${measure}`;
+      const current = measures.get(key);
+      measures.set(key, {
+        left: Math.min(current?.left ?? box.x, box.x),
+        right: Math.max(current?.right ?? box.x + box.width, box.x + box.width),
+        top: Math.min(current?.top ?? box.y, box.y),
+        bottom: Math.max(current?.bottom ?? box.y + box.height, box.y + box.height),
+        start: current?.start ?? Infinity,
+        end: current?.end ?? -Infinity,
+      });
+    }
+    for (const event of events) {
+      const start = (Number(event.start) || 0) * secondsPerWholeNote;
+      const end =
+        start +
+        Math.max(
+          0.04,
+          Number(event.duration) ||
+            (Number(event.end) || 0) - (Number(event.start) || 0),
+        ) *
+          secondsPerWholeNote;
+      for (const set of event.elements ?? []) {
+        for (const element of set) {
+          const classes = element.getAttribute("class") ?? "";
+          const line = classes.match(/\babcjs-l(-?\d+)\b/)?.[1];
+          const measure = classes.match(/\babcjs-m(-?\d+)\b/)?.[1];
+          const timeline = line == null || measure == null
+            ? null
+            : measures.get(`${line}:${measure}`);
+          if (timeline) {
+            timeline.start = Math.min(timeline.start, start);
+            timeline.end = Math.max(timeline.end, end);
+          }
+        }
+      }
+    }
+    return [...measures.values()]
+      .filter((measure) => Number.isFinite(measure.start) && measure.end > measure.start)
+      .map((measure) => ({ ...measure, width: Math.max(1, measure.right - measure.left) }));
   }
 }
 
