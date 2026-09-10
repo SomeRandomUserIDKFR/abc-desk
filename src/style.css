@@ -355,7 +355,7 @@ button.primary:hover {
   stroke-width: 1.5;
   opacity: 0.9;
   pointer-events: none;
-  transition: x1 0.08s linear, x2 0.08s linear;
+  transition: x1 0.02s linear, x2 0.02s linear;
 }
 
 .abcjs-highlight {

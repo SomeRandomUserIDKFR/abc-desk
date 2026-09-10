@@ -271,7 +271,7 @@ export function createTestingPlayer({
     const startedAt = performance.now() - fromSeconds * 1000;
     timers.push(window.setInterval(() => {
       cursorControl.onProgress((performance.now() - startedAt) / 1000);
-    }, 33));
+    }, 16));
     for (const event of events) {
       const eventSeconds = (Number(event.start) || 0) * secondsPerWholeNote;
       if (eventSeconds < fromSeconds) continue;

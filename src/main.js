@@ -601,18 +601,39 @@ class CursorControl {
   onProgress(seconds) {
     const svg = paper.querySelector("svg");
     if (!svg || !this.measureTimelines.length) return;
+    const visibleMeasures = this.measureTimelines.filter(
+      (measure) => seconds >= measure.start && seconds <= measure.end,
+    );
+    const synchronized =
+      visibleMeasures.length > 1 &&
+      visibleMeasures.every(
+        (measure) =>
+          Math.abs(measure.start - visibleMeasures[0].start) <= 0.08 &&
+          Math.abs(measure.end - visibleMeasures[0].end) <= 0.08,
+      );
+    const displayMeasures = synchronized
+      ? [
+          {
+            ...visibleMeasures[0],
+            top: Math.min(...visibleMeasures.map((measure) => measure.top)),
+            bottom: Math.max(...visibleMeasures.map((measure) => measure.bottom)),
+            key: "synchronized",
+          },
+        ]
+      : visibleMeasures.map((measure) => ({ ...measure, key: measure }));
+    this.measureCursorNodes.forEach((cursor) => {
+      cursor.style.display = "none";
+    });
     const active = new Set();
-    for (const measure of this.measureTimelines) {
-      let cursor = this.measureCursorNodes.get(measure);
+    for (const measure of displayMeasures) {
+      let cursor = this.measureCursorNodes.get(measure.key);
       if (!cursor) {
         cursor = document.createElementNS("http://www.w3.org/2000/svg", "line");
         cursor.setAttribute("class", "abcjs-measure-cursor");
         svg.appendChild(cursor);
-        this.measureCursorNodes.set(measure, cursor);
+        this.measureCursorNodes.set(measure.key, cursor);
       }
-      const visible = seconds >= measure.start && seconds <= measure.end;
-      cursor.style.display = visible ? "" : "none";
-      if (!visible) continue;
+      cursor.style.display = "";
       active.add(cursor);
       const ratio = Math.max(
         0,
