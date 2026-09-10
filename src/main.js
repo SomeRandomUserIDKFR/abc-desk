@@ -605,9 +605,9 @@ class CursorControl {
   onProgress(seconds) {
     const svg = paper.querySelector("svg");
     if (!svg || !this.measureTimelines.length) return;
-    const visibleMeasures = this.measureTimelines.filter(
-      (measure) => seconds >= measure.start && seconds <= measure.end,
-    );
+    const visibleMeasures = this.measureTimelines
+      .filter((measure) => seconds >= measure.start && seconds <= measure.end)
+      .sort((left, right) => right.start - left.start);
     if (!visibleMeasures.length) return;
     const synchronized =
       visibleMeasures.length > 0 &&
