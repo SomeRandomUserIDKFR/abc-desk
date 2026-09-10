@@ -691,7 +691,7 @@ class CursorControl {
   animateMeasureCursors() {
     let moving = false;
     for (const [cursor, state] of this.measureCursorStates) {
-      const ease = 0.3;
+      const ease = 0.5;
       state.x += (state.targetX - state.x) * ease;
       state.y1 += (state.targetY1 - state.y1) * ease;
       state.y2 += (state.targetY2 - state.y2) * ease;
