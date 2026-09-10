@@ -576,6 +576,7 @@ class CursorControl {
     this.measureCursorStates = new Map();
     this.measureCursorFrame = null;
     this.measureTimelines = [];
+    this.noteTimelines = [];
   }
 
   onStart({ events = [], secondsPerWholeNote = 2 } = {}) {
@@ -597,6 +598,7 @@ class CursorControl {
       events,
       secondsPerWholeNote,
     );
+    this.noteTimelines = this.buildNoteTimelines(svg, events, secondsPerWholeNote);
     this.onProgress(0);
   }
 
@@ -621,9 +623,14 @@ class CursorControl {
             top: Math.min(...visibleMeasures.map((measure) => measure.top)),
             bottom: Math.max(...visibleMeasures.map((measure) => measure.bottom)),
             key: "primary",
+            sourceKeys: visibleMeasures.map((measure) => measure.key),
           },
         ]
-      : visibleMeasures.map((measure) => ({ ...measure, key: measure }));
+      : visibleMeasures.map((measure) => ({
+          ...measure,
+          key: measure,
+          sourceKeys: [measure.key],
+        }));
     this.measureCursorNodes.forEach((cursor) => {
       cursor.style.display = "none";
     });
@@ -643,14 +650,26 @@ class CursorControl {
         Math.min(1, (seconds - measure.start) / Math.max(0.001, measure.end - measure.start)),
       );
       const x = measure.left + measure.width * ratio;
+      const activeNotes = this.noteTimelines.filter(
+        (note) =>
+          measure.sourceKeys.includes(note.key) &&
+          seconds >= note.start &&
+          seconds <= note.end,
+      );
+      const noteTop = activeNotes.length
+        ? Math.min(...activeNotes.map((note) => note.top))
+        : measure.top;
+      const noteBottom = activeNotes.length
+        ? Math.max(...activeNotes.map((note) => note.bottom))
+        : measure.bottom;
       const state = this.measureCursorStates.get(cursor) ?? {
         x,
-        y1: measure.top,
-        y2: measure.bottom,
+        y1: noteTop,
+        y2: noteBottom,
       };
       state.targetX = x;
-      state.targetY1 = measure.top;
-      state.targetY2 = measure.bottom;
+      state.targetY1 = noteTop;
+      state.targetY2 = noteBottom;
       this.measureCursorStates.set(cursor, state);
     }
     this.measureCursors = [...active];
@@ -731,6 +750,7 @@ class CursorControl {
     }
     this.measureCursorStates.clear();
     this.measureTimelines = [];
+    this.noteTimelines = [];
     paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
       el.classList.remove("abcjs-highlight");
     });
@@ -812,6 +832,38 @@ class CursorControl {
         };
       })
       .filter((measure) => measure.end > measure.start);
+  }
+
+  buildNoteTimelines(svg, events, secondsPerWholeNote) {
+    const notes = [];
+    for (const event of events) {
+      const start = (Number(event.start) || 0) * secondsPerWholeNote;
+      const end =
+        start +
+        Math.max(
+          0.04,
+          Number(event.duration) ||
+            (Number(event.end) || 0) - (Number(event.start) || 0),
+        ) *
+          secondsPerWholeNote;
+      for (const set of event.elements ?? []) {
+        for (const element of set) {
+          const classes = element.getAttribute("class") ?? "";
+          const line = classes.match(/\babcjs-l(-?\d+)\b/)?.[1];
+          const measure = classes.match(/\babcjs-m(-?\d+)\b/)?.[1];
+          if (line == null || measure == null) continue;
+          const box = element.getBBox();
+          notes.push({
+            key: `${line}:${measure}`,
+            start,
+            end,
+            top: box.y,
+            bottom: box.y + box.height,
+          });
+        }
+      }
+    }
+    return notes;
   }
 }
 
