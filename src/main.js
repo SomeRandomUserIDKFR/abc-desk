@@ -573,6 +573,8 @@ class CursorControl {
     this.experimentalActive = new Map();
     this.measureCursors = [];
     this.measureCursorNodes = new Map();
+    this.measureCursorStates = new Map();
+    this.measureCursorFrame = null;
     this.measureTimelines = [];
   }
 
@@ -641,12 +643,46 @@ class CursorControl {
         Math.min(1, (seconds - measure.start) / Math.max(0.001, measure.end - measure.start)),
       );
       const x = measure.left + measure.width * ratio;
-      cursor.setAttribute("x1", String(x));
-      cursor.setAttribute("x2", String(x));
-      cursor.setAttribute("y1", String(measure.top));
-      cursor.setAttribute("y2", String(measure.bottom));
+      const state = this.measureCursorStates.get(cursor) ?? {
+        x,
+        y1: measure.top,
+        y2: measure.bottom,
+      };
+      state.targetX = x;
+      state.targetY1 = measure.top;
+      state.targetY2 = measure.bottom;
+      this.measureCursorStates.set(cursor, state);
     }
     this.measureCursors = [...active];
+    if (this.measureCursorFrame == null) {
+      this.measureCursorFrame = window.requestAnimationFrame(() =>
+        this.animateMeasureCursors(),
+      );
+    }
+  }
+
+  animateMeasureCursors() {
+    let moving = false;
+    for (const [cursor, state] of this.measureCursorStates) {
+      const ease = 0.3;
+      state.x += (state.targetX - state.x) * ease;
+      state.y1 += (state.targetY1 - state.y1) * ease;
+      state.y2 += (state.targetY2 - state.y2) * ease;
+      cursor.setAttribute("x1", String(state.x));
+      cursor.setAttribute("x2", String(state.x));
+      cursor.setAttribute("y1", String(state.y1));
+      cursor.setAttribute("y2", String(state.y2));
+      if (
+        Math.abs(state.targetX - state.x) > 0.1 ||
+        Math.abs(state.targetY1 - state.y1) > 0.1 ||
+        Math.abs(state.targetY2 - state.y2) > 0.1
+      ) {
+        moving = true;
+      }
+    }
+    this.measureCursorFrame = moving
+      ? window.requestAnimationFrame(() => this.animateMeasureCursors())
+      : null;
   }
 
   onEvent(event) {
@@ -689,6 +725,11 @@ class CursorControl {
     this.measureCursors = [];
     this.measureCursorNodes.forEach((cursor) => cursor.remove());
     this.measureCursorNodes.clear();
+    if (this.measureCursorFrame != null) {
+      window.cancelAnimationFrame(this.measureCursorFrame);
+      this.measureCursorFrame = null;
+    }
+    this.measureCursorStates.clear();
     this.measureTimelines = [];
     paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
       el.classList.remove("abcjs-highlight");
