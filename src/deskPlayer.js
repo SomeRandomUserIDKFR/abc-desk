@@ -279,6 +279,7 @@ export function createTestingPlayer({
       timers.push(window.setTimeout(() => cursorControl.onEvent({
         elements: event.elements || event.elts || [],
         highlightDuration: eventDuration(event) * secondsPerWholeNote * 1000,
+        playbackSeconds: eventSeconds,
         left: 0,
         top: 0,
         height: 0,

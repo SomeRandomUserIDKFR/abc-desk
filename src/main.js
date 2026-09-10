@@ -571,6 +571,7 @@ class CursorControl {
     this.beatSubdivisions = 2;
     this.experimental = experimental;
     this.experimentalActive = new Map();
+    this.lastEventSeconds = null;
     this.measureCursors = [];
     this.measureCursorNodes = new Map();
     this.measureCursorStates = new Map();
@@ -581,6 +582,7 @@ class CursorControl {
 
   onStart({ events = [], secondsPerWholeNote = 2 } = {}) {
     this.experimentalActive.clear();
+    this.lastEventSeconds = null;
     const svg = paper.querySelector("svg");
     if (!svg) return;
     let cursor = svg.querySelector(".abcjs-cursor");
@@ -714,12 +716,19 @@ class CursorControl {
 
   onEvent(event) {
     if (!event?.elements?.length) return;
-    paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
-      el.classList.remove("abcjs-highlight");
-    });
-    if (this.experimental) {
+    const eventSeconds = Number(event.playbackSeconds);
+    const sameMoment =
+      this.experimental &&
+      Number.isFinite(eventSeconds) &&
+      this.lastEventSeconds != null &&
+      Math.abs(eventSeconds - this.lastEventSeconds) <= 0.04;
+    if (!sameMoment) {
+      paper.querySelectorAll(".abcjs-highlight").forEach((el) => {
+        el.classList.remove("abcjs-highlight");
+      });
       this.experimentalActive.clear();
     }
+    if (Number.isFinite(eventSeconds)) this.lastEventSeconds = eventSeconds;
     for (const set of event.elements) {
       for (const el of set) {
         const targets = [el, ...el.querySelectorAll?.("path, ellipse, line, polygon, polyline, text") ?? []];
@@ -748,6 +757,7 @@ class CursorControl {
 
   onFinished() {
     this.experimentalActive.clear();
+    this.lastEventSeconds = null;
     this.measureCursors.forEach((cursor) => cursor.remove());
     this.measureCursors = [];
     this.measureCursorNodes.forEach((cursor) => cursor.remove());
