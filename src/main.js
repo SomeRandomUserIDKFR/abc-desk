@@ -712,6 +712,8 @@ class CursorControl {
       const key = `${line}:${measure}`;
       const current = measures.get(key);
       measures.set(key, {
+        line,
+        measureIndex: Number(measure),
         left: Math.min(current?.left ?? box.x, box.x),
         right: Math.max(current?.right ?? box.x + box.width, box.x + box.width),
         top: Math.min(current?.top ?? box.y, box.y),
@@ -745,9 +747,25 @@ class CursorControl {
         }
       }
     }
-    return [...measures.values()]
+    const timelines = [...measures.values()]
       .filter((measure) => Number.isFinite(measure.start) && measure.end > measure.start)
       .map((measure) => ({ ...measure, width: Math.max(1, measure.right - measure.left) }));
+    const lines = new Map();
+    for (const timeline of timelines) {
+      const line = lines.get(timeline.line) ?? [];
+      line.push(timeline);
+      lines.set(timeline.line, line);
+    }
+    for (const line of lines.values()) {
+      line.sort((left, right) => left.start - right.start);
+      for (let index = 0; index < line.length - 1; index += 1) {
+        const nextStart = line[index + 1].start;
+        if (nextStart > line[index].start) {
+          line[index].end = nextStart;
+        }
+      }
+    }
+    return timelines;
   }
 }
 
