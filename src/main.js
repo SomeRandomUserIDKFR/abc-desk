@@ -608,6 +608,7 @@ class CursorControl {
     const visibleMeasures = this.measureTimelines.filter(
       (measure) => seconds >= measure.start && seconds <= measure.end,
     );
+    if (!visibleMeasures.length) return;
     const synchronized =
       visibleMeasures.length > 0 &&
       (visibleMeasures.length <= 1 ||
@@ -666,7 +667,14 @@ class CursorControl {
         x,
         y1: noteTop,
         y2: noteBottom,
+        line: measure.line,
       };
+      if (state.line !== measure.line) {
+        state.x = x;
+        state.y1 = noteTop;
+        state.y2 = noteBottom;
+        state.line = measure.line;
+      }
       state.targetX = x;
       state.targetY1 = noteTop;
       state.targetY2 = noteBottom;
