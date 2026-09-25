@@ -102,23 +102,23 @@ Put `%%MIDI program` **before** `K:` (in the header). After `K:` / mid-body it c
 
 ### Timeline passives (experimental player)
 
-The following standalone Desk lines are removed before standard ABC parsing and
-are exposed as timeline metadata:
+Place these markers in the music body, between measures or inline before a bar
+line. They are removed before standard ABC parsing and exposed as timeline
+metadata:
 
 ```text
 Echo: 1/4
-Flashback:
-Foreshadow:
-ReverseFlashback:
-Resolution:
+Flashback: 1-2
+Foreshadow: 3-4
+ReverseFlashback: 5-6
+Resolution: 7-8
 ```
 
 `Echo:` accepts a musical delay in whole-note units (for example `1/4` or
-`0.25`) and creates shifted, tagged visual replay events. The other passives
-currently replay normalized events for visual highlighting only; they do not
-alter the abcjs soundfont mix. Experimental cursors/highlights use distinct
-colors for each passive. These lines are intentionally ignored by the legacy
-player and have no effect on ordinary ABC notation.
+`0.25`) and creates shifted, tagged replay events. The other passives replay
+their tagged notes with the experimental player and use distinct cursor and
+highlight colors. These markers are intentionally ignored by the legacy player
+and have no effect on ordinary ABC notation.
 
 The **Ensemble stress test** sample is available in the editor sample menu. It
 uses an eight-player concert violin section, two-part counterpoint, long slurs,

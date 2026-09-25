@@ -16,6 +16,8 @@ const DRUM_ENCODED_RE = /^(?:%%|I:)\s*desk-drum(1|2)\s+(.+)$/i;
 const DRUM_MARKER_RE = /^\s*(?:!([oOpP])!|([oOpP]))(?=$|[\s|:\]\)\}\/,;])/;
 const TIMELINE_PASSIVE_RE =
   /^(Echo|Flashback|Foreshadow|ReverseFlashback|Resolution)\s*:\s*(.*)$/i;
+const TIMELINE_PASSIVE_INLINE_RE =
+  /\b(Echo|Flashback|Foreshadow|ReverseFlashback|Resolution)\s*:\s*([^|]+?)(?=\s*\||$)/gi;
 
 export const TIMELINE_PASSIVE_TYPES = Object.freeze({
   echo: { label: "Echo", color: "ice-blue" },
@@ -679,6 +681,24 @@ export function parseDeskHeaders(source) {
           lineStart,
           lineIndex + 1,
         ),
+      );
+      continue;
+    }
+
+    const inlinePassives = [...line.matchAll(TIMELINE_PASSIVE_INLINE_RE)];
+    if (inlinePassives.length) {
+      for (const match of inlinePassives) {
+        timelinePassives.push(
+          parseTimelinePassive(
+            match[1],
+            match[2],
+            lineStart + match.index,
+            lineIndex + 1,
+          ),
+        );
+      }
+      kept.push(
+        line.replace(TIMELINE_PASSIVE_INLINE_RE, "").replace(/\s{2,}/g, " ").trim(),
       );
       continue;
     }
