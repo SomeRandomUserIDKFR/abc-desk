@@ -36,6 +36,7 @@ export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
         if (playTransition) {
           return Promise.resolve({ status: "busy" });
         }
+
         playTransition = true;
         return Promise.resolve(controllerPlay(...args)).finally(() => {
           playTransition = false;
@@ -123,7 +124,11 @@ export function createTestingPlayer({
   let paused = false;
   let currentAudioParams = null;
   let synth = null;
+  const passiveSynths = new Map();
+  const passiveStartTimers = new Map();
+  const startedPassives = new Set();
   let roomBus = null;
+  let passiveAudioNodes = [];
   let secondsPerWholeNote = 2;
   let pausedSeconds = 0;
   let playbackEnded = false;
@@ -238,6 +243,7 @@ export function createTestingPlayer({
     if (playbackStarting) return;
     if (synth && paused && !playbackEnded) {
       synth.start();
+      startedPassives.forEach((type) => passiveSynths.get(type)?.start());
       paused = false;
       scheduleCursor(pausedSeconds);
       return;
@@ -254,6 +260,7 @@ export function createTestingPlayer({
       }
       synth?.stop?.();
       synth = nextSynth;
+      await startPassiveSynths(request);
       synth.start();
       connectRoom(
         synth,
@@ -280,6 +287,43 @@ export function createTestingPlayer({
     }
   }
 
+  async function startPassiveSynths(request) {
+    if (!visualObj) return;
+    const passives = currentAudioParams?.callbackContext?.timelinePassives ?? [];
+    for (const passive of passives) {
+      const type = String(passive.type ?? "").toLowerCase();
+      if (!type) continue;
+      const nextSynth = new abcjs.synth.CreateSynth();
+      try {
+        await nextSynth.init({ visualObj, options: currentAudioParams });
+        await nextSynth.prime();
+        if (request !== playbackRequest) {
+          nextSynth.stop?.();
+          return;
+        }
+        passiveSynths.get(type)?.stop?.();
+        passiveSynths.set(type, nextSynth);
+        const passiveStart = events.find(
+          (event) => event.timelinePassive === type,
+        )?.start;
+        const delay = Math.max(
+          0,
+          Number(passiveStart ?? passive.delay) || 0,
+        ) * secondsPerWholeNote;
+        const timer = window.setTimeout(() => {
+          passiveStartTimers.delete(type);
+          if (request !== playbackRequest) return;
+          passiveSynths.get(type)?.start();
+          startedPassives.add(type);
+        }, Math.round(delay * 1000));
+        passiveStartTimers.set(type, timer);
+      } catch (error) {
+        nextSynth.stop?.();
+        if (request === playbackRequest) throw error;
+      }
+    }
+  }
+
   function scheduleCursor(fromSeconds) {
     const startedAt = performance.now() - fromSeconds * 1000;
     timers.push(window.setInterval(() => {
@@ -290,7 +334,9 @@ export function createTestingPlayer({
       if (eventSeconds < fromSeconds) continue;
       const delay = Math.max(0, Math.round((eventSeconds - fromSeconds) * 1000));
       timers.push(window.setTimeout(() => cursorControl.onEvent({
+        sourceEvent: event,
         elements: event.elements || event.elts || [],
+        timelinePassive: event.timelinePassive,
         highlightDuration: eventDuration(event) * secondsPerWholeNote * 1000,
         playbackSeconds: eventSeconds,
         left: 0,
@@ -318,6 +364,9 @@ export function createTestingPlayer({
     paused = true;
     clearTimers();
     pausedSeconds = synth?.pause?.() ?? pausedSeconds;
+    passiveStartTimers.forEach((timer) => window.clearTimeout(timer));
+    passiveStartTimers.clear();
+    startedPassives.forEach((type) => passiveSynths.get(type)?.pause?.());
     playbackEnded = false;
     playbackStarting = false;
   }
@@ -333,7 +382,21 @@ export function createTestingPlayer({
     playbackRequest++;
     clearTimers();
     synth?.stop();
+    passiveStartTimers.forEach((timer) => window.clearTimeout(timer));
+    passiveStartTimers.clear();
+    passiveSynths.forEach((passiveSynth) => passiveSynth.stop?.());
+    passiveSynths.clear();
+    startedPassives.clear();
     roomBus?.roomNoise?.stop?.();
+    passiveAudioNodes.forEach((node) => {
+      try {
+        node.stop();
+      } catch {
+        /* Nodes may already have reached their scheduled end. */
+      }
+      node.disconnect();
+    });
+    passiveAudioNodes = [];
     roomBus?.input.disconnect();
     roomBus = null;
     synth = null;
@@ -341,6 +404,47 @@ export function createTestingPlayer({
     paused = false;
     playbackEnded = false;
     playbackStarting = false;
+  }
+
+  function schedulePassiveAudio(
+    input,
+    passiveEvents,
+    wholeNoteSeconds,
+    nodes,
+    instrument = "",
+  ) {
+    if (!input || !passiveEvents.length) return;
+    const context = input.context;
+    const now = context.currentTime;
+    for (const event of passiveEvents) {
+      const pitch = Number(event.pitch);
+      if (!Number.isFinite(pitch)) continue;
+      const start = now + Math.max(0, Number(event.start) || 0) * wholeNoteSeconds;
+      const duration = Math.max(0.04, eventDuration(event) * wholeNoteSeconds);
+      const velocity = Math.max(0.02, Math.min(0.18, (Number(event.volume) || 80) / 127 * 0.12));
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = passiveWaveform(instrument);
+      oscillator.frequency.value = 440 * 2 ** ((pitch - 69) / 12);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(velocity, start + Math.min(0.025, duration * 0.2));
+      gain.gain.setValueAtTime(velocity, start + duration * 0.72);
+      gain.gain.linearRampToValueAtTime(0, start + duration);
+      oscillator.connect(gain).connect(input);
+      oscillator.start(start);
+      oscillator.stop(start + duration + 0.02);
+      nodes.push(oscillator);
+    }
+
+    function passiveWaveform(instrument) {
+      const name = String(instrument).toLowerCase();
+      if (name.includes("flute") || name.includes("organ")) return "sine";
+      if (name.includes("violin") || name.includes("viola") || name.includes("cello")) {
+        return "sawtooth";
+      }
+      if (name.includes("fiddle") || name.includes("guitar")) return "triangle";
+      return "triangle";
+    }
   }
 
   function clearTimers() {
