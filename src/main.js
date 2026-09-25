@@ -1519,8 +1519,12 @@ function enableSynth() {
  * Prepare source: multi-part assemble → Desk dialect preprocess.
  */
 function prepareSource(source) {
-  const partInfo = parseParts(source);
-  let working = source;
+  const overlaySource =
+    !/^\s*Part\s*:/im.test(source) && /&/.test(source)
+      ? formatForDesk(source)
+      : null;
+  const partInfo = parseParts(overlaySource ?? source);
+  let working = overlaySource ?? source;
   /** @type {string[]} */
   const extraWarnings = [...(partInfo.warnings || [])];
   let partsMeta = null;
