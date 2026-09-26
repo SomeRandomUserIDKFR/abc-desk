@@ -61,12 +61,12 @@ export const DESK_DECORATIONS = {
     expandTo: '"^ascent"!slide!',
   },
   glissando: {
-    label: "glissando",
-    expandTo: '"^glissando"!slide!',
+    label: "gliss.",
+    expandTo: '"gliss."!slide!',
   },
   glisendo: {
-    label: "glissando",
-    expandTo: '"^glissando"!slide!',
+    label: "gliss.",
+    expandTo: '"gliss."!slide!',
   },
   xhead: {
     label: "x-head",
@@ -1469,7 +1469,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
 function markGlissandoNotes(tracks, sourceText) {
   if (!sourceText) return;
   const markers = [];
-  const markerRe = /"\^glissando"\s*!slide!/gi;
+  const markerRe = /"gliss\."\s*!slide!/gi;
   for (const match of sourceText.matchAll(markerRe)) {
     if (match.index != null) markers.push(match.index);
   }
