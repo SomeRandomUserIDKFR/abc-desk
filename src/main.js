@@ -1031,8 +1031,16 @@ function enableSynth() {
  * Prepare source: multi-part assemble → Desk dialect preprocess.
  */
 function prepareSource(source) {
-  const partInfo = parseParts(source);
-  let working = source;
+  // Expand inline overlays before abcjs parses them. abcjs's overlay cursor can
+  // lose the default-length multiplier after dotted material, while the Desk
+  // part assembler preserves the exact durations with explicit rests.
+  const formattedOverlaySource =
+    !/^\s*Part\s*:/im.test(source) && /&/.test(source)
+      ? formatForDesk(source)
+      : null;
+  const normalizedSource = formattedOverlaySource || source;
+  const partInfo = parseParts(normalizedSource);
+  let working = normalizedSource;
   /** @type {string[]} */
   const extraWarnings = [...(partInfo.warnings || [])];
   let partsMeta = null;
