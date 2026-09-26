@@ -1638,7 +1638,7 @@ function renderScore() {
 
       for (const marker of markerPositions) {
         const sourceIndex = noteEntries.findIndex(
-          (entry) => entry.start != null && marker >= entry.start && marker < entry.end,
+          (entry) => entry.start != null && entry.start >= marker,
         );
         if (sourceIndex < 0 || sourceIndex + 1 >= noteEntries.length) continue;
         const from = noteEntries[sourceIndex].selectable.svgEl;
@@ -1710,7 +1710,7 @@ function updateTestingMetrics() {
   if (!testingMetrics) return;
   const metrics = player?.getDiagnostics();
   testingMetrics.textContent = metrics
-    ? `${player.backendName}: ${metrics.tracks} tracks · ${metrics.notes} notes · ${metrics.events} events · ${metrics.duration}s · ${metrics.phrases} phrases · ${metrics.expressionEvents} curves · ${metrics.toneEvents} tone changes · ${metrics.players} players · ${metrics.ensembleGain}x section gain · ${formatArticulations(metrics.articulations)}`
+    ? `${player.backendName}: ${metrics.tracks} tracks · ${metrics.notes} notes · ${metrics.events} events · ${metrics.duration}s · ${metrics.glissandi ?? 0} glissandi · ${metrics.phrases} phrases · ${metrics.expressionEvents} curves · ${metrics.toneEvents} tone changes · ${metrics.players} players · ${metrics.ensembleGain}x section gain · ${formatArticulations(metrics.articulations)}`
     : "Load playback to inspect normalized playback events.";
   renderPerformanceTimeline(metrics);
 }

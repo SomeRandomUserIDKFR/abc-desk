@@ -1017,7 +1017,6 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     }
   }
 
-  markGlissandoNotes(tracks, ctx?.sourceText);
   enhanceDynamicRamps(tracks, humanAmount);
 
   for (const track of tracks) {
@@ -1464,37 +1463,6 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   addPercussionMarkers(tracks, ctx);
 
   return tracks;
-}
-
-function markGlissandoNotes(tracks, sourceText) {
-  if (!sourceText) return;
-  const markers = [];
-  const markerRe = /"gliss\."\s*!slide!/gi;
-  for (const match of sourceText.matchAll(markerRe)) {
-    if (match.index != null) markers.push(match.index);
-  }
-  if (!markers.length) return;
-
-  for (const track of tracks) {
-    const notes = track.filter((event) => event.cmd === "note");
-    for (let index = 0; index < notes.length - 1; index++) {
-      const note = notes[index];
-      if (
-        note.startChar == null ||
-        !markers.some(
-          (marker) => marker >= note.startChar && marker < note.endChar,
-        )
-      ) {
-        continue;
-      }
-      const target = notes[index + 1];
-      if (Number.isFinite(Number(note.pitch)) && Number.isFinite(Number(target.pitch))) {
-        note.glissando = true;
-        note.glissandoTargetPitch = target.pitch;
-        note.glissandoTargetStart = target.start;
-      }
-    }
-  }
 }
 
 function applyBowedStringArticulation(tracks, humanAmount) {

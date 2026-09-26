@@ -174,6 +174,10 @@ export function createTestingPlayer({
       );
       const sequence = visualObj.setUpAudio(currentAudioParams);
       const tracks = normalizePerformanceTracks(sequence?.tracks ?? []);
+      applyGlissandoMetadata(
+        tracks,
+        currentAudioParams?.callbackContext?.sourceText,
+      );
       for (const track of tracks) {
         for (const event of track) {
           if (event.end == null) {
@@ -193,6 +197,7 @@ export function createTestingPlayer({
         ),
       );
       diagnostics = summarizeEvents(tracks, {}, graph);
+      diagnostics.glissandi = events.filter((event) => event.glissando).length;
       diagnostics.duration = Math.round(
         Math.max(...events.map(eventEnd), 0) * 1000,
       ) / 1000;
@@ -252,8 +257,12 @@ export function createTestingPlayer({
     const request = ++playbackRequest;
     const nextSynth = new abcjs.synth.CreateSynth();
     try {
-      await nextSynth.init({ visualObj, options: currentAudioParams });
-      await nextSynth.prime();
+      await Promise.all([
+        nextSynth.init({ visualObj, options: currentAudioParams }).then(
+          () => nextSynth.prime(),
+        ),
+        prepareGlissandoRuns(events, currentAudioParams?.program, secondsPerWholeNote),
+      ]);
       if (request !== playbackRequest) {
         nextSynth.stop?.();
         return;
@@ -685,7 +694,7 @@ export function createTestingPlayer({
     );
     scheduleGlissandoAudio(
       context,
-      input,
+      context.destination,
       noteEvents,
       secondsPerWholeNote,
       passiveAudioNodes,
@@ -708,36 +717,92 @@ export function createTestingPlayer({
     nodes,
   ) {
     for (const event of noteEvents) {
-      if (!event.glissando || event.glissandoTargetPitch == null) continue;
-      const duration = Math.max(
-        0.045,
-        Math.min(0.16, eventDuration(event) * wholeNoteSeconds * 0.35),
-      );
+      if (!event.glissando || !event.glissandoRunBuffer) continue;
+      const runBuffer = event.glissandoRunBuffer;
       const targetStart = Number(event.glissandoTargetStart);
-      const start = Number.isFinite(targetStart)
-        ? context.currentTime + Math.max(0, targetStart) * wholeNoteSeconds - duration
-        : nowForEvent(event, wholeNoteSeconds, context);
-      const end = start + duration;
-      const from = pitchFrequency(event.pitch);
-      const to = pitchFrequency(event.glissandoTargetPitch);
-      if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) continue;
-      const oscillator = context.createOscillator();
+      const end = Number.isFinite(targetStart)
+        ? context.currentTime + Math.max(0, targetStart) * wholeNoteSeconds
+        : nowForEvent(event, wholeNoteSeconds, context) + runBuffer.duration;
+      const start = Math.max(context.currentTime, end - runBuffer.duration);
+      const source = context.createBufferSource();
       const gain = context.createGain();
-      oscillator.type = "sawtooth";
-      oscillator.frequency.setValueAtTime(from, start);
-      oscillator.frequency.exponentialRampToValueAtTime(to, end);
-      gain.gain.setValueAtTime(0, start);
-      const velocity = Math.max(
-        0.08,
-        Math.min(0.24, (Number(event.volume) || 80) / 127 * 0.28),
+      source.buffer = runBuffer;
+      gain.gain.value = Math.max(
+        0.6,
+        Math.min(1, (Number(event.volume) || 80) / 100),
       );
-      gain.gain.linearRampToValueAtTime(velocity, start + duration * 0.12);
-      gain.gain.linearRampToValueAtTime(velocity * 0.7, end);
-      oscillator.connect(gain).connect(destination);
-      oscillator.start(start);
-      oscillator.stop(end + 0.01);
-      nodes.push(oscillator);
+      source.connect(gain).connect(destination);
+      source.start(start);
+      nodes.push(source);
     }
+  }
+
+  /**
+   * Build a short offline-rendered run of real instrument notes (one per
+   * white key from the marked note to its glissando target) so playback
+   * uses the actual soundfont attack/resonance instead of a synthetic tone.
+   * Each note's duration is sized to fit the actual gap before the target
+   * note starts, so the run lands right as the target note begins.
+   */
+  async function prepareGlissandoRuns(noteEvents, program, wholeNoteSeconds) {
+    const glissandoEvents = noteEvents.filter(
+      (event) => event.glissando && event.glissandoTargetPitch != null,
+    );
+    if (!glissandoEvents.length) return;
+    await Promise.all(
+      glissandoEvents.map(async (event) => {
+        const pitches = whiteKeyPath(event.pitch, event.glissandoTargetPitch);
+        if (!pitches.length) return;
+        const targetStart = Number(event.glissandoTargetStart);
+        const availableSeconds = Number.isFinite(targetStart)
+          ? Math.max(0.05, (targetStart - (Number(event.start) || 0)) * wholeNoteSeconds)
+          : Math.max(0.05, eventDuration(event) * wholeNoteSeconds);
+        const noteSeconds = Math.min(0.11, Math.max(0.03, availableSeconds / pitches.length));
+        const buffer = await buildGlissandoRunBuffer(pitches, noteSeconds, program);
+        if (buffer) event.glissandoRunBuffer = buffer;
+      }),
+    );
+  }
+
+  async function buildGlissandoRunBuffer(pitches, noteSeconds, program) {
+    const noteText = pitches.map(midiPitchToAbcNote).filter(Boolean).join(" ");
+    if (!noteText) return null;
+    const bpm = Math.max(20, Math.round(60 / Math.max(0.02, noteSeconds)));
+    const abcSource = `X:1\nL:1/8\nQ:1/8=${bpm}\nK:C\n${noteText}|`;
+    const tuneObj = abcjs.parseOnly(abcSource)?.[0];
+    if (!tuneObj) return null;
+    const runSynth = new abcjs.synth.CreateSynth();
+    // A short fade keeps each burst note distinct rather than slurring into
+    // the next — a real glissando run, not overlapping decay tails.
+    const options = { fadeLength: 55 };
+    if (Number.isFinite(program)) options.program = program;
+    try {
+      await runSynth.init({ visualObj: tuneObj, options });
+      await runSynth.prime();
+      return runSynth.getAudioBuffer() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  function whiteKeyPath(fromPitch, targetPitch) {
+    const from = Math.round(Number(fromPitch));
+    const target = Math.round(Number(targetPitch));
+    if (!Number.isFinite(from) || !Number.isFinite(target)) return [];
+    const direction = target >= from ? 1 : -1;
+    const whiteKeys = new Set([0, 2, 4, 5, 7, 9, 11]);
+    const pitches = [];
+    for (
+      let pitch = from + direction;
+      direction > 0 ? pitch <= target : pitch >= target;
+      pitch += direction
+    ) {
+      if (whiteKeys.has(((pitch % 12) + 12) % 12)) pitches.push(pitch);
+    }
+    if (!pitches.length || pitches[pitches.length - 1] !== target) {
+      pitches.push(target);
+    }
+    return pitches;
   }
 
   function nowForEvent(event, wholeNoteSeconds, context) {
@@ -748,11 +813,27 @@ export function createTestingPlayer({
       ));
   }
 
-  function pitchFrequency(pitch) {
-    const value = Number(pitch);
-    return Number.isFinite(value) ? 440 * 2 ** ((value - 69) / 12) : NaN;
-  }
+}
 
+const GLISSANDO_LETTER_BASE_MIDI = { C: 60, D: 62, E: 64, F: 65, G: 67, A: 69, B: 71 };
+const GLISSANDO_PITCH_CLASS_LETTER = { 0: "C", 2: "D", 4: "E", 5: "F", 7: "G", 9: "A", 11: "B" };
+
+/**
+ * Convert a MIDI-style pitch number (natural/white-key only) to its ABC
+ * note letter, applying octave marks per the ABC notation standard
+ * (uppercase C = middle C; apostrophes/commas shift octaves from there).
+ */
+function midiPitchToAbcNote(pitch) {
+  const midi = Math.round(Number(pitch));
+  if (!Number.isFinite(midi)) return null;
+  const pitchClass = ((midi % 12) + 12) % 12;
+  const letter = GLISSANDO_PITCH_CLASS_LETTER[pitchClass];
+  if (!letter) return null;
+  const base = GLISSANDO_LETTER_BASE_MIDI[letter];
+  const octaveShift = Math.round((midi - base) / 12);
+  if (octaveShift === 0) return letter;
+  if (octaveShift > 0) return letter.toLowerCase() + "'".repeat(octaveShift - 1);
+  return letter + ",".repeat(-octaveShift);
 }
 
 function scheduleVelocityBrightness(
@@ -1098,6 +1179,47 @@ function eventDuration(event) {
     Number(event.duration) ||
       ((Number(event.end) || 0) - (Number(event.start) || 0)),
   );
+}
+
+function applyGlissandoMetadata(tracks, sourceText) {
+  if (!sourceText) return;
+  const markerRe = /"gliss\."\s*!slide!|!glissando!|!glisendo!/gi;
+  const markers = [...sourceText.matchAll(markerRe)]
+    .map((match) => match.index)
+    .filter((index) => index != null);
+  if (!markers.length) return;
+
+  // A decoration always attaches to the very next note token in the source
+  // text, regardless of which voice/overlay track it belongs to. Flatten
+  // every track's notes (keeping each note's position within its own track
+  // so we can find its follow-up note) and sort by source position.
+  const allNotes = [];
+  tracks.forEach((track) => {
+    const notes = track.filter(
+      (event) => event.cmd === "note" && !event.ensembleReplica,
+    );
+    notes.forEach((note, noteIndex) => {
+      if (note.startChar == null) return;
+      allNotes.push({ note, notes, noteIndex });
+    });
+  });
+  if (!allNotes.length) return;
+  allNotes.sort((left, right) => left.note.startChar - right.note.startChar);
+
+  for (const marker of markers) {
+    const match = allNotes.find(({ note }) => note.startChar >= marker);
+    if (!match) continue;
+    const target = match.notes[match.noteIndex + 1];
+    if (!target) continue;
+    if (
+      Number.isFinite(Number(match.note.pitch)) &&
+      Number.isFinite(Number(target.pitch))
+    ) {
+      match.note.glissando = true;
+      match.note.glissandoTargetPitch = target.pitch;
+      match.note.glissandoTargetStart = target.start;
+    }
+  }
 }
 
 function eventEnd(event) {
