@@ -12,7 +12,6 @@ import { formatForDesk, parseParts } from "./deskParts.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
 import { createDeskPlayer, createTestingPlayer } from "./deskPlayer.js";
-import { createMuseScorePlayer } from "./museScorePlayer.js";
 import songTxt from "../Song.txt?raw";
 
 const SAMPLES = {
@@ -254,6 +253,20 @@ app.innerHTML = `
   <header class="hero">
     <h1 class="brand">ABC <em>Desk</em></h1>
     <p class="tagline">Compose in text — lint, multi-part scores, attack marks, share links. <code>Inst:</code> / <code>%%MIDI</code>, <code>Part:</code>, <code>!gimplus!</code>.</p>
+    <div class="customization">
+      <button type="button" id="customize" aria-expanded="false" aria-controls="customization-menu">Customize</button>
+      <div id="customization-menu" class="customization-menu" hidden>
+        <label for="cursor-style">Cursor style</label>
+        <select id="cursor-style">
+          <option value="classic">Classic bar</option>
+          <option value="serif">Serif</option>
+          <option value="double-note">Double note</option>
+          <option value="wild-cards">Wild cards</option>
+          <option value="mimic-note">Mimic note</option>
+          <option value="next-note">Next note</option>
+        </select>
+      </div>
+    </div>
   </header>
   <main class="workspace">
     <section class="panel editor-panel" aria-label="ABC source">
@@ -351,6 +364,32 @@ style.textContent = `
     font-size: 0.9em;
     color: var(--accent-soft);
   }
+  .customization {
+    position: relative;
+    align-self: flex-start;
+  }
+  .customization-menu {
+    position: absolute;
+    z-index: 2;
+    top: calc(100% + 0.45rem);
+    right: 0;
+    min-width: 8rem;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 0.65rem;
+    background: var(--panel);
+    color: var(--muted);
+    box-shadow: 0 0.7rem 1.5rem rgba(0, 0, 0, 0.2);
+  }
+  .customization-menu label {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: var(--text);
+    font-size: 0.8rem;
+  }
+  .customization-menu select {
+    min-width: 9rem;
+  }
 `;
 document.head.appendChild(style);
 
@@ -367,6 +406,9 @@ const downloadWavBtn = document.querySelector("#download-wav");
 const downloadPdfBtn = document.querySelector("#download-pdf");
 const downloadPngBtn = document.querySelector("#download-png");
 const downloadJpegBtn = document.querySelector("#download-jpeg");
+const customizeBtn = document.querySelector("#customize");
+const customizationMenu = document.querySelector("#customization-menu");
+const cursorStyleSelect = document.querySelector("#cursor-style");
 const testingMetrics = document.querySelector("#testing-metrics");
 const performanceTimeline = document.querySelector("#performance-timeline");
 const timelinePhrases = document.querySelector("#timeline-phrases");
@@ -375,6 +417,21 @@ const timelineTempo = document.querySelector("#timeline-tempo");
 const timelinePassives = document.querySelector("#timeline-passives");
 const timelinePlayhead = document.querySelector("#timeline-playhead");
 const timelineLegend = document.querySelector("#timeline-legend");
+
+customizeBtn.addEventListener("click", () => {
+  const open = customizationMenu.hidden;
+  customizationMenu.hidden = !open;
+  customizeBtn.setAttribute("aria-expanded", String(open));
+});
+
+const savedCursorStyle = window.localStorage.getItem("abc-desk-cursor-style") ?? "classic";
+cursorStyleSelect.value = savedCursorStyle;
+document.documentElement.dataset.cursorStyle = savedCursorStyle;
+cursorStyleSelect.addEventListener("change", () => {
+  const style = cursorStyleSelect.value;
+  document.documentElement.dataset.cursorStyle = style;
+  window.localStorage.setItem("abc-desk-cursor-style", style);
+});
 const timelineTime = document.querySelector("#timeline-time");
 const supportsAudio = abcjs.synth.supportsAudio();
 
@@ -559,6 +616,151 @@ async function saveScoreAsPdf() {
   triggerDownloadFromBlob(pdf.output("blob"), `${tuneFileStem()}.pdf`);
 }
 
+function getEventBounds(event) {
+  const elements = (event?.elements ?? []).flatMap((set) => set ?? []);
+  const boxes = elements
+    .map((element) => {
+      try {
+        return element.getBBox?.();
+      } catch {
+        return null;
+      }
+    })
+    .filter(
+      (box) =>
+        box &&
+        Number.isFinite(box.x) &&
+        Number.isFinite(box.y) &&
+        Number.isFinite(box.width) &&
+        Number.isFinite(box.height),
+    );
+  if (!boxes.length) {
+    return {
+      left: Number(event?.left) || 0,
+      right: (Number(event?.left) || 0) + (Number(event?.width) || 0),
+      top: Number(event?.top) || 0,
+      bottom: (Number(event?.top) || 0) + (Number(event?.height) || 0),
+    };
+  }
+  return {
+    left: Math.min(...boxes.map((box) => box.x)),
+    right: Math.max(...boxes.map((box) => box.x + box.width)),
+    top: Math.min(...boxes.map((box) => box.y)),
+    bottom: Math.max(...boxes.map((box) => box.y + box.height)),
+  };
+}
+
+function createCursorNode(className) {
+  const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  group.setAttribute("class", className);
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.classList.add("cursor-stem");
+  const topCap = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  topCap.classList.add("cursor-serif-cap", "cursor-serif-top");
+  const bottomCap = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  bottomCap.classList.add("cursor-serif-cap", "cursor-serif-bottom");
+  const brace = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  brace.classList.add("cursor-serif-brace");
+  const topPoint = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  topPoint.classList.add("cursor-serif-point", "cursor-serif-point-top");
+  const bottomPoint = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  bottomPoint.classList.add("cursor-serif-point", "cursor-serif-point-bottom");
+  const mimic = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  mimic.classList.add("cursor-mimic-shape");
+  const topNote = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
+  topNote.classList.add("cursor-notehead", "cursor-notehead-top");
+  const bottomNote = document.createElementNS("http://www.w3.org/2000/svg", "ellipse");
+  bottomNote.classList.add("cursor-notehead", "cursor-notehead-bottom");
+  group.append(
+    line,
+    topCap,
+    bottomCap,
+    brace,
+    topPoint,
+    bottomPoint,
+    mimic,
+    topNote,
+    bottomNote,
+  );
+  setCursorGeometry(group, 0, 0, 0);
+  return group;
+}
+
+function setCursorGeometry(cursor, x, top, bottom) {
+  const line = cursor.querySelector(".cursor-stem");
+  line?.setAttribute("x1", String(x));
+  line?.setAttribute("x2", String(x));
+  line?.setAttribute("y1", String(top));
+  line?.setAttribute("y2", String(bottom));
+  const capWidth = 5;
+  cursor.querySelector(".cursor-serif-top")?.setAttribute("x1", String(x - capWidth));
+  cursor.querySelector(".cursor-serif-top")?.setAttribute("x2", String(x + capWidth));
+  cursor.querySelector(".cursor-serif-top")?.setAttribute("y1", String(top));
+  cursor.querySelector(".cursor-serif-top")?.setAttribute("y2", String(top));
+  cursor.querySelector(".cursor-serif-bottom")?.setAttribute("x1", String(x - capWidth));
+  cursor.querySelector(".cursor-serif-bottom")?.setAttribute("x2", String(x + capWidth));
+  cursor.querySelector(".cursor-serif-bottom")?.setAttribute("y1", String(bottom));
+  cursor.querySelector(".cursor-serif-bottom")?.setAttribute("y2", String(bottom));
+  const middle = top + (bottom - top) / 2;
+  cursor.querySelector(".cursor-serif-brace")?.setAttribute(
+    "d",
+    `M ${x + 2} ${top} C ${x - 4} ${top}, ${x - 5} ${top + 4}, ${x - 2} ${top + 7} L ${x + 2} ${top + 11} C ${x + 5} ${top + 15}, ${x + 5} ${middle - 8}, ${x + 1} ${middle} C ${x + 5} ${middle + 8}, ${x + 5} ${bottom - 15}, ${x + 2} ${bottom - 11} L ${x - 2} ${bottom - 7} C ${x - 5} ${bottom - 4}, ${x - 4} ${bottom}, ${x + 2} ${bottom}`,
+  );
+  cursor.querySelector(".cursor-serif-point-top")?.setAttribute(
+    "d",
+    `M ${x + 2} ${top - 5} L ${x + 5} ${top + 2} L ${x - 1} ${top + 1} Z`,
+  );
+  cursor.querySelector(".cursor-serif-point-bottom")?.setAttribute(
+    "d",
+    `M ${x + 2} ${bottom + 5} L ${x + 5} ${bottom - 2} L ${x - 1} ${bottom - 1} Z`,
+  );
+  const stroke = getComputedStyle(cursor).stroke;
+  if (stroke && stroke !== "none") {
+    cursor.querySelectorAll(".cursor-serif-point").forEach((point) => {
+      point.setAttribute("fill", stroke);
+    });
+  }
+
+  cursor.querySelector(".cursor-notehead-top")?.setAttribute("cx", String(x));
+  cursor.querySelector(".cursor-notehead-top")?.setAttribute("cy", String(top));
+  cursor.querySelector(".cursor-notehead-bottom")?.setAttribute("cx", String(x));
+  cursor.querySelector(".cursor-notehead-bottom")?.setAttribute("cy", String(bottom));
+}
+
+function setMimicShape(cursor, event, previousPosition = null) {
+  const shape = cursor.querySelector(".cursor-mimic-shape");
+  if (!shape) return;
+  const rawBounds = getEventBounds(event);
+  const bounds = {
+    left: Number.isFinite(rawBounds.left) ? rawBounds.left : 0,
+    right: Number.isFinite(rawBounds.right) ? rawBounds.right : 0,
+    top: Number.isFinite(rawBounds.top) ? rawBounds.top : 0,
+    bottom: Number.isFinite(rawBounds.bottom) ? rawBounds.bottom : 0,
+  };
+  const previousBounds = cursor.mimicBounds;
+  const rawOffsetX = previousPosition
+    ? previousPosition.x - bounds.left
+    : previousBounds
+      ? previousBounds.left - bounds.left
+      : 0;
+  const rawOffsetY = previousPosition
+    ? previousPosition.y - bounds.top
+    : previousBounds
+      ? previousBounds.top - bounds.top
+      : 0;
+  const offsetX = Number.isFinite(rawOffsetX) ? rawOffsetX : 0;
+  const offsetY = Number.isFinite(rawOffsetY) ? rawOffsetY : 0;
+  shape.replaceChildren(
+    ...(event.elements ?? [])
+      .flatMap((set) => set ?? [])
+      .map((element) => element.cloneNode(true)),
+  );
+  cursor.mimicBounds = bounds;
+  cursor.mimicOrigin = bounds;
+  cursor.mimicOffset = { x: offsetX, y: offsetY };
+  shape.setAttribute("transform", `translate(${offsetX} ${offsetY})`);
+}
+
 function updateDownloadButtons() {
   const hasTune = Boolean(lastVisualObj);
   downloadMidiBtn.disabled = !hasTune;
@@ -578,28 +780,37 @@ class CursorControl {
     this.measureCursorNodes = new Map();
     this.measureCursorStates = new Map();
     this.measureCursorFrame = null;
+    this.mimicCursorFrame = null;
+    this.mimicCursorStates = new Map();
     this.measureTimelines = [];
     this.noteTimelines = [];
+    this.passiveCursorNodes = new Map();
   }
 
   onStart({ events = [], secondsPerWholeNote = 2 } = {}) {
     this.experimentalActive.clear();
     this.lastEventSeconds = null;
+    this.mimicCursorStates.clear();
     const svg = paper.querySelector("svg");
     if (!svg) return;
-    let cursor = svg.querySelector(".abcjs-cursor");
+    for (const type of new Set(
+      events
+        .map((event) => String(event.timelinePassive ?? "").toLowerCase())
+        .filter(Boolean),
+    )) {
+      this.ensurePassiveCursor(svg, type);
+    }
+    let cursor = svg.querySelector(
+      ".abcjs-cursor:not(.abcjs-passive-cursor)",
+    );
     if (!cursor) {
-      cursor = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      cursor.setAttribute("class", "abcjs-cursor");
-      cursor.setAttributeNS(null, "x1", "0");
-      cursor.setAttributeNS(null, "y1", "0");
-      cursor.setAttributeNS(null, "x2", "0");
-      cursor.setAttributeNS(null, "y2", "0");
+      cursor = createCursorNode("abcjs-cursor");
       svg.appendChild(cursor);
     }
+    const canonicalEvents = events.filter((event) => !event.timelinePassive);
     this.measureTimelines = this.buildMeasureTimelines(
       svg,
-      events,
+      canonicalEvents,
       secondsPerWholeNote,
     );
     this.noteTimelines = this.buildNoteTimelines(svg, events, secondsPerWholeNote);
@@ -643,8 +854,7 @@ class CursorControl {
     for (const measure of displayMeasures) {
       let cursor = this.measureCursorNodes.get(measure.key);
       if (!cursor) {
-        cursor = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        cursor.setAttribute("class", "abcjs-measure-cursor");
+        cursor = createCursorNode("abcjs-measure-cursor");
         svg.appendChild(cursor);
         this.measureCursorNodes.set(measure.key, cursor);
       }
@@ -657,6 +867,7 @@ class CursorControl {
       const x = measure.left + measure.width * ratio;
       const activeNotes = this.noteTimelines.filter(
         (note) =>
+          !note.timelinePassive &&
           measure.sourceKeys.includes(note.key) &&
           seconds >= note.start &&
           seconds <= note.end,
@@ -684,6 +895,8 @@ class CursorControl {
       state.targetY2 = noteBottom;
       this.measureCursorStates.set(cursor, state);
     }
+    this.updatePassiveCursors(seconds);
+    this.updateMimicCursors(seconds);
     this.measureCursors = [...active];
     if (this.measureCursorFrame == null) {
       this.measureCursorFrame = window.requestAnimationFrame(() =>
@@ -699,10 +912,7 @@ class CursorControl {
       state.x += (state.targetX - state.x) * ease;
       state.y1 += (state.targetY1 - state.y1) * ease;
       state.y2 += (state.targetY2 - state.y2) * ease;
-      cursor.setAttribute("x1", String(state.x));
-      cursor.setAttribute("x2", String(state.x));
-      cursor.setAttribute("y1", String(state.y1));
-      cursor.setAttribute("y2", String(state.y2));
+      setCursorGeometry(cursor, state.x, state.y1, state.y2);
       if (
         Math.abs(state.targetX - state.x) > 0.1 ||
         Math.abs(state.targetY1 - state.y1) > 0.1 ||
@@ -710,14 +920,169 @@ class CursorControl {
       ) {
         moving = true;
       }
+
     }
     this.measureCursorFrame = moving
       ? window.requestAnimationFrame(() => this.animateMeasureCursors())
       : null;
   }
 
+  updatePassiveCursors(seconds) {
+    const passiveTypes = new Set(
+      this.noteTimelines
+        .map((note) => note.timelinePassive)
+        .filter(Boolean),
+    );
+    for (const type of passiveTypes) {
+      const notes = this.noteTimelines
+        .filter((note) => note.timelinePassive === type)
+        .sort((left, right) => left.start - right.start);
+      if (!notes.length) continue;
+      const first = notes[0];
+      const last = notes[notes.length - 1];
+      const cursor = this.passiveCursorNodes.get(type);
+      if (!cursor) continue;
+      if (seconds < first.start || seconds > last.end) {
+        cursor.style.display = "none";
+        continue;
+      }
+
+      cursor.style.display = "";
+      let current = notes[0];
+      for (const note of notes) {
+        if (note.start <= seconds) current = note;
+        else break;
+      }
+      const next = notes.find((note) => note.start > current.start);
+      const ratio = next
+        ? Math.max(
+            0,
+            Math.min(
+              1,
+              (seconds - current.start) /
+                Math.max(0.001, next.start - current.start),
+            ),
+          )
+        : 0;
+      const left = current.left + (next ? next.left - current.left : 0) * ratio;
+      setCursorGeometry(cursor, left - 2, current.top, current.bottom);
+    }
+  }
+
+  updateMimicCursors(seconds) {
+    const style = document.documentElement.dataset.cursorStyle;
+    if (style !== "mimic-note" && style !== "next-note") return;
+    const updateCursor = (cursor, notes) => {
+      if (!cursor || !notes.length || !cursor.mimicOrigin) return;
+      if (style === "next-note") {
+        const state = this.mimicCursorStates.get(cursor);
+        if (state) {
+          state.targetX = 0;
+          state.targetY = 0;
+        }
+        return;
+      }
+      let current = notes[0];
+      for (const note of notes) {
+        if (note.start <= seconds) current = note;
+        else break;
+      }
+      const next = notes.find((note) => note.start > current.start);
+      const ratio = next
+        ? Math.max(
+            0,
+            Math.min(
+              1,
+              (seconds - current.start) /
+                Math.max(0.001, next.start - current.start),
+            ),
+          )
+        : 0;
+      const left = current.left + (next ? next.left - current.left : 0) * ratio;
+      const top = current.top + (next ? next.top - current.top : 0) * ratio;
+      const state = this.mimicCursorStates.get(cursor) ?? {
+        x: cursor.mimicOffset?.x ?? 0,
+        y: cursor.mimicOffset?.y ?? 0,
+      };
+      if (
+        !Number.isFinite(cursor.mimicOrigin.left) ||
+        !Number.isFinite(cursor.mimicOrigin.top)
+      ) {
+        return;
+      }
+      state.targetX = left - cursor.mimicOrigin.left;
+      state.targetY = top - cursor.mimicOrigin.top;
+      this.mimicCursorStates.set(cursor, state);
+    };
+
+    const mainCursor = paper.querySelector(
+      ".abcjs-cursor:not(.abcjs-passive-cursor)",
+    );
+    updateCursor(
+      mainCursor,
+      this.noteTimelines
+        .filter((note) => !note.timelinePassive)
+        .sort((left, right) => left.start - right.start),
+    );
+    for (const [type, cursor] of this.passiveCursorNodes) {
+      updateCursor(
+        cursor,
+        this.noteTimelines
+          .filter((note) => note.timelinePassive === type)
+          .sort((left, right) => left.start - right.start),
+      );
+    }
+    if (this.mimicCursorFrame == null) {
+      this.mimicCursorFrame = window.requestAnimationFrame(() =>
+        this.animateMimicCursors(),
+      );
+    }
+  }
+
+  animateMimicCursors() {
+    let moving = false;
+    for (const [cursor, state] of this.mimicCursorStates) {
+      if (!Number.isFinite(state.x)) {
+        state.x = Number.isFinite(cursor.mimicOffset?.x)
+          ? cursor.mimicOffset.x
+          : 0;
+      }
+      if (!Number.isFinite(state.y)) {
+        state.y = Number.isFinite(cursor.mimicOffset?.y)
+          ? cursor.mimicOffset.y
+          : 0;
+      }
+      if (!Number.isFinite(state.targetX)) state.targetX = state.x;
+      if (!Number.isFinite(state.targetY)) state.targetY = state.y;
+      if (state.timed) {
+        const progress = Math.min(
+          1,
+          Math.max(0, (performance.now() - state.startAt) / state.durationMs),
+        );
+        state.x = state.startX + (state.targetX - state.startX) * progress;
+        state.y = state.startY + (state.targetY - state.startY) * progress;
+      } else {
+        state.x += (state.targetX - state.x) * 0.5;
+        state.y += (state.targetY - state.y) * 0.5;
+      }
+      cursor
+        .querySelector(".cursor-mimic-shape")
+        ?.setAttribute("transform", `translate(${state.x} ${state.y})`);
+      if (
+        Math.abs(state.targetX - state.x) > 0.1 ||
+        Math.abs(state.targetY - state.y) > 0.1
+      ) {
+        moving = true;
+      }
+    }
+    this.mimicCursorFrame = moving
+      ? window.requestAnimationFrame(() => this.animateMimicCursors())
+      : null;
+  }
+
   onEvent(event) {
     if (!event?.elements?.length) return;
+    const sourceEvent = event.sourceEvent ?? event;
     const eventSeconds = Number(event.playbackSeconds);
     const passiveType = String(event.timelinePassive ?? "").toLowerCase();
     const passiveClass = passiveType
@@ -761,8 +1126,11 @@ class CursorControl {
         }
       }
     }
-    const cursor = paper.querySelector(".abcjs-cursor");
-    if (cursor) {
+    const cursor = paper.querySelector(
+      ".abcjs-cursor:not(.abcjs-passive-cursor)",
+    );
+    const cursorStyle = document.documentElement.dataset.cursorStyle;
+    if (cursor && !passiveType) {
       cursor.classList.remove(
         "abcjs-cursor-passive-echo",
         "abcjs-cursor-passive-flashback",
@@ -771,23 +1139,136 @@ class CursorControl {
         "abcjs-cursor-passive-resolution",
       );
       if (passiveType) cursor.classList.add(`abcjs-cursor-passive-${passiveType}`);
-      cursor.setAttribute("x1", event.left - 2);
-      cursor.setAttribute("x2", event.left - 2);
-      cursor.setAttribute("y1", event.top);
-      cursor.setAttribute("y2", event.top + event.height);
-    }
-    this.measureCursorNodes.forEach((measureCursor) => {
-      measureCursor.classList.remove(
-        "abcjs-cursor-passive-echo",
-        "abcjs-cursor-passive-flashback",
-        "abcjs-cursor-passive-foreshadow",
-        "abcjs-cursor-passive-reverseflashback",
-        "abcjs-cursor-passive-resolution",
-      );
-      if (passiveType) {
-        measureCursor.classList.add(`abcjs-cursor-passive-${passiveType}`);
+      setCursorGeometry(cursor, event.left - 2, event.top, event.top + event.height);
+      if (cursorStyle === "mimic-note" || cursorStyle === "next-note") {
+        const state = this.mimicCursorStates.get(cursor);
+        const previousPosition =
+          state && cursor.mimicOrigin
+            ? {
+                x: cursor.mimicOrigin.left + state.x,
+                y: cursor.mimicOrigin.top + state.y,
+              }
+            : null;
+        const nextNote =
+          cursorStyle === "next-note"
+              ? this.noteTimelines
+                  .filter(
+                    (note) =>
+                      !note.timelinePassive &&
+                      note.event !== sourceEvent &&
+                      note.start >
+                        (this.noteTimelines.find((note) => note.event === sourceEvent)
+                          ?.start ?? Infinity),
+                  )
+                  .sort((left, right) => left.start - right.start)[0]
+              : null;
+        setMimicShape(
+          cursor,
+          nextNote?.event ?? sourceEvent,
+          previousPosition ?? getEventBounds(event),
+        );
+        const glideDurationMs =
+          nextNote && Number.isFinite(nextNote.start)
+            ? Math.max(
+                50,
+                (nextNote.start -
+                  (this.noteTimelines.find((note) => note.event === sourceEvent)
+                    ?.start ?? nextNote.start)) *
+                  900,
+              )
+            : 180;
+        const initialX = cursor.mimicOffset?.x ?? 0;
+        const initialY = cursor.mimicOffset?.y ?? 0;
+        this.mimicCursorStates.set(cursor, {
+          x: initialX,
+          y: initialY,
+          startX: initialX,
+          startY: initialY,
+          targetX: cursorStyle === "next-note" ? 0 : initialX,
+          targetY: cursorStyle === "next-note" ? 0 : initialY,
+          startAt: performance.now(),
+          durationMs: glideDurationMs,
+          timed: cursorStyle === "next-note",
+        });
       }
-    });
+    }
+    if (passiveType) {
+      const svg = paper.querySelector("svg");
+      if (svg) {
+        const passiveCursor = this.ensurePassiveCursor(svg, passiveType);
+        const bounds = getEventBounds(event);
+        setCursorGeometry(
+          passiveCursor,
+          bounds.left - 2,
+          bounds.top,
+          bounds.bottom,
+        );
+        if (cursorStyle === "mimic-note" || cursorStyle === "next-note") {
+          const state = this.mimicCursorStates.get(passiveCursor);
+          const previousPosition =
+            state && passiveCursor.mimicOrigin
+              ? {
+                  x: passiveCursor.mimicOrigin.left + state.x,
+                  y: passiveCursor.mimicOrigin.top + state.y,
+                }
+              : null;
+          const nextNote =
+            cursorStyle === "next-note"
+              ? this.noteTimelines
+                  .filter(
+                    (note) =>
+                      note.timelinePassive === passiveType &&
+                        note.event !== sourceEvent &&
+                        note.start >
+                          (this.noteTimelines.find(
+                            (note) =>
+                              note.event === sourceEvent &&
+                              note.timelinePassive === passiveType,
+                          )?.start ?? Infinity),
+                    )
+                  .sort((left, right) => left.start - right.start)[0]
+              : null;
+          setMimicShape(
+            passiveCursor,
+            nextNote?.event ?? sourceEvent,
+            previousPosition ?? bounds,
+          );
+          const currentNote = this.noteTimelines.find(
+            (note) =>
+              note.event === sourceEvent && note.timelinePassive === passiveType,
+          );
+          const glideDurationMs =
+            nextNote && currentNote
+              ? Math.max(50, (nextNote.start - currentNote.start) * 900)
+              : 180;
+          const initialX = passiveCursor.mimicOffset?.x ?? 0;
+          const initialY = passiveCursor.mimicOffset?.y ?? 0;
+          this.mimicCursorStates.set(passiveCursor, {
+            x: initialX,
+            y: initialY,
+            startX: initialX,
+            startY: initialY,
+            targetX: cursorStyle === "next-note" ? 0 : initialX,
+            targetY: cursorStyle === "next-note" ? 0 : initialY,
+            startAt: performance.now(),
+            durationMs: glideDurationMs,
+            timed: cursorStyle === "next-note",
+          });
+        }
+      }
+    }
+  }
+
+  ensurePassiveCursor(svg, passiveType) {
+    let cursor = this.passiveCursorNodes.get(passiveType);
+    if (!cursor) {
+      cursor = createCursorNode(
+        `abcjs-cursor abcjs-passive-cursor abcjs-cursor-passive-${passiveType}`,
+      );
+      svg.appendChild(cursor);
+      this.passiveCursorNodes.set(passiveType, cursor);
+    }
+    return cursor;
   }
 
   onFinished() {
@@ -797,10 +1278,17 @@ class CursorControl {
     this.measureCursors = [];
     this.measureCursorNodes.forEach((cursor) => cursor.remove());
     this.measureCursorNodes.clear();
+    this.passiveCursorNodes.forEach((cursor) => cursor.remove());
+    this.passiveCursorNodes.clear();
     if (this.measureCursorFrame != null) {
       window.cancelAnimationFrame(this.measureCursorFrame);
       this.measureCursorFrame = null;
     }
+    if (this.mimicCursorFrame != null) {
+      window.cancelAnimationFrame(this.mimicCursorFrame);
+      this.mimicCursorFrame = null;
+    }
+    this.mimicCursorStates.clear();
     this.measureCursorStates.clear();
     this.measureTimelines = [];
     this.noteTimelines = [];
@@ -814,7 +1302,9 @@ class CursorControl {
         "abcjs-passive-resolution",
       );
     });
-    const cursor = paper.querySelector(".abcjs-cursor");
+    const cursor = paper.querySelector(
+      ".abcjs-cursor:not(.abcjs-passive-cursor)",
+    );
     if (cursor) {
       cursor.classList.remove(
         "abcjs-cursor-passive-echo",
@@ -823,10 +1313,7 @@ class CursorControl {
         "abcjs-cursor-passive-reverseflashback",
         "abcjs-cursor-passive-resolution",
       );
-      cursor.setAttribute("x1", 0);
-      cursor.setAttribute("x2", 0);
-      cursor.setAttribute("y1", 0);
-      cursor.setAttribute("y2", 0);
+      setCursorGeometry(cursor, 0, 0, 0);
     }
   }
 
@@ -913,22 +1400,23 @@ class CursorControl {
             (Number(event.end) || 0) - (Number(event.start) || 0),
         ) *
           secondsPerWholeNote;
-      for (const set of event.elements ?? []) {
-        for (const element of set) {
-          const classes = element.getAttribute("class") ?? "";
-          const line = classes.match(/\babcjs-l(-?\d+)\b/)?.[1];
-          const measure = classes.match(/\babcjs-m(-?\d+)\b/)?.[1];
-          if (line == null || measure == null) continue;
-          const box = element.getBBox();
-          notes.push({
-            key: `${line}:${measure}`,
-            start,
-            end,
-            top: box.y,
-            bottom: box.y + box.height,
-          });
-        }
-      }
+      const elements = (event.elements ?? []).flatMap((set) => set ?? []);
+      if (!elements.length) continue;
+      const classes = elements[0].getAttribute("class") ?? "";
+      const line = classes.match(/\babcjs-l(-?\d+)\b/)?.[1];
+      const measure = classes.match(/\babcjs-m(-?\d+)\b/)?.[1];
+      if (line == null || measure == null) continue;
+      const bounds = getEventBounds(event);
+      notes.push({
+        key: `${line}:${measure}`,
+        event,
+        timelinePassive: event.timelinePassive,
+        left: bounds.left,
+        start,
+        end,
+        top: bounds.top,
+        bottom: bounds.bottom,
+      });
     }
     return notes;
   }
@@ -987,9 +1475,9 @@ function renderLint(issues) {
   }
 }
 
-function initSynth() {
+async function initSynth() {
   player = museScoreFramework
-    ? createMuseScorePlayer({
+    ? (await import("./museScorePlayer.js")).createMuseScorePlayer({
         abcjs,
         audioSelector: "#audio",
       })
@@ -1131,6 +1619,7 @@ function renderScore() {
       const audioParams = deskAudioParams(prepared.meta);
       try {
         player.setTune(lastVisualObj, audioParams);
+        player.disable(false);
         updateTestingMetrics();
       } catch (error) {
         updateTestingMetrics();
@@ -1465,6 +1954,7 @@ editor.addEventListener("keydown", (e) => {
   }
 });
 
-initSynth();
-renderScore();
-updateDownloadButtons();
+void initSynth().then(() => {
+  renderScore();
+  updateDownloadButtons();
+});

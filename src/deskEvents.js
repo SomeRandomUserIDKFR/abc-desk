@@ -158,10 +158,11 @@ export function createTimelinePassiveEvents(events, passives = []) {
   for (const passive of passives) {
     const type = String(passive?.type ?? "").toLowerCase();
     if (!type || !sourceEvents.length) continue;
+    const timelineDuration = Math.max(...sourceEvents.map(eventEnd), 0);
     const delay =
       type === "echo"
         ? Math.max(0, finiteNumber(passive.delay) ?? 0.25)
-        : Math.max(0, finiteNumber(passive.delay) ?? 0);
+        : Math.max(0, finiteNumber(passive.trigger) ?? timelineDuration);
     for (const [index, event] of sourceEvents.entries()) {
       const start = (finiteNumber(event.start) ?? 0) + delay;
       const duration = eventDuration(event);
@@ -192,7 +193,7 @@ function buildTimelinePassiveRanges(notes, passives = []) {
       const delay =
         type === "echo"
           ? Math.max(0, finiteNumber(passive.delay) ?? 0.25)
-          : Math.max(0, finiteNumber(passive.delay) ?? 0);
+          : Math.max(0, finiteNumber(passive.trigger) ?? duration);
       return {
         type,
         label: passive.label ?? type,

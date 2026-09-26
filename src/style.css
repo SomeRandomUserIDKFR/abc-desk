@@ -350,6 +350,138 @@ button.primary:hover {
   stroke-width: 2;
 }
 
+.cursor-stem,
+.cursor-serif-cap,
+.cursor-notehead {
+  vector-effect: non-scaling-stroke;
+}
+
+.cursor-serif-cap {
+  display: none;
+}
+
+.cursor-serif-brace {
+  display: none;
+  fill: none;
+}
+
+.cursor-serif-point {
+  display: none;
+  fill: inherit;
+  stroke: none;
+}
+
+.cursor-notehead {
+  display: none;
+  fill: inherit;
+  stroke: inherit;
+}
+
+.cursor-mimic-shape {
+  display: none;
+  fill: none;
+  stroke: inherit;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.cursor-mimic-shape *,
+.cursor-mimic-shape path,
+.cursor-mimic-shape ellipse,
+.cursor-mimic-shape line,
+.cursor-mimic-shape polygon,
+.cursor-mimic-shape polyline {
+  fill: none !important;
+  stroke: inherit !important;
+  stroke-width: inherit !important;
+  opacity: 1 !important;
+}
+
+.abcjs-measure-cursor {
+  stroke-width: 2;
+}
+
+html[data-cursor-style="classic"] .abcjs-cursor,
+html[data-cursor-style="classic"] .abcjs-measure-cursor {
+  stroke-linecap: butt;
+  stroke-dasharray: none;
+}
+
+html[data-cursor-style="serif"] .abcjs-cursor,
+html[data-cursor-style="serif"] .abcjs-measure-cursor {
+  stroke-linecap: round;
+  stroke-width: 2.5;
+}
+
+html[data-cursor-style="serif"] .cursor-stem,
+html[data-cursor-style="serif"] .cursor-serif-cap {
+  display: none;
+}
+
+html[data-cursor-style="serif"] .cursor-serif-brace {
+  display: inline;
+  stroke-width: 2.75;
+  stroke-linecap: square;
+  stroke-linejoin: bevel;
+}
+
+html[data-cursor-style="serif"] .cursor-serif-point {
+  display: inline;
+}
+
+html[data-cursor-style="double-note"] .abcjs-cursor,
+html[data-cursor-style="double-note"] .abcjs-measure-cursor {
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+html[data-cursor-style="double-note"] .cursor-notehead {
+  display: inline;
+  fill: none;
+  rx: 4;
+  ry: 2.5;
+  transform: rotate(-24deg);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+html[data-cursor-style="wild-cards"] .abcjs-cursor,
+html[data-cursor-style="wild-cards"] .abcjs-measure-cursor {
+  stroke-linecap: round;
+  stroke-width: 3;
+  stroke-dasharray: 2 4;
+}
+
+html[data-cursor-style="mimic-note"] .cursor-stem,
+html[data-cursor-style="next-note"] .cursor-stem,
+html[data-cursor-style="mimic-note"] .cursor-serif-cap,
+html[data-cursor-style="next-note"] .cursor-serif-cap,
+html[data-cursor-style="mimic-note"] .cursor-serif-brace,
+html[data-cursor-style="next-note"] .cursor-serif-brace,
+html[data-cursor-style="mimic-note"] .cursor-serif-point,
+html[data-cursor-style="next-note"] .cursor-serif-point,
+html[data-cursor-style="mimic-note"] .cursor-notehead {
+  display: none;
+}
+
+html[data-cursor-style="next-note"] .cursor-notehead {
+  display: none;
+}
+
+html[data-cursor-style="mimic-note"] .cursor-mimic-shape {
+  display: inline;
+}
+
+html[data-cursor-style="next-note"] .cursor-mimic-shape {
+  display: inline;
+}
+
+.abcjs-passive-cursor {
+  stroke-width: 2.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
 .abcjs-measure-cursor {
   stroke: var(--accent);
   stroke-width: 1.5;
