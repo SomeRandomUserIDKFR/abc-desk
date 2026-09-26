@@ -709,11 +709,14 @@ export function createTestingPlayer({
   ) {
     for (const event of noteEvents) {
       if (!event.glissando || event.glissandoTargetPitch == null) continue;
-      const start = nowForEvent(event, wholeNoteSeconds, context);
       const duration = Math.max(
         0.045,
         Math.min(0.16, eventDuration(event) * wholeNoteSeconds * 0.35),
       );
+      const targetStart = Number(event.glissandoTargetStart);
+      const start = Number.isFinite(targetStart)
+        ? context.currentTime + Math.max(0, targetStart) * wholeNoteSeconds - duration
+        : nowForEvent(event, wholeNoteSeconds, context);
       const end = start + duration;
       const from = pitchFrequency(event.pitch);
       const to = pitchFrequency(event.glissandoTargetPitch);

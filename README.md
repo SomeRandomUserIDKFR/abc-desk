@@ -189,8 +189,8 @@ soundfont playback remains unchanged.
 
 In the experimental player, `!glissando!` (or the `!glisendo!` alias) adds an
 audible, quick pitch sweep from the marked note to the following note. The
-score uses a `gliss.` marking, and the notes keep their separate attacks; the
-sweep does not turn them into a slur.
+score draws a wavy connector and uses a `gliss.` marking, and the notes keep
+their separate attacks; the sweep does not turn them into a slur.
 | `!cluster!c` / `!cluster5!e` | chord cluster around the note |
 
 ABC slurs such as `(ABc` use dedicated experimental violin articulation: notes

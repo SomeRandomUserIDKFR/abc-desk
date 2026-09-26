@@ -1585,6 +1585,7 @@ function renderScore() {
     if (gen !== renderGen) return;
 
     lastVisualObj = visualObjs[0] ?? null;
+    renderGlissandoMarks(lastVisualObj, prepared.cleanAbc);
     const warnings = filterDecorationWarnings([
       ...prepared.warnings,
       ...(lastVisualObj?.warnings ?? []),
@@ -1610,6 +1611,69 @@ function renderScore() {
       setStatus(`${base} — ${warnings[0]}`, true);
     } else {
       setStatus(base);
+    }
+
+    function renderGlissandoMarks(tune, cleanAbc) {
+      const svg = paper.querySelector("svg");
+      if (!svg || !tune || !cleanAbc) return;
+      const markerPositions = [
+        ...cleanAbc.matchAll(/"gliss\."\s*!slide!/gi),
+      ]
+        .map((match) => match.index)
+        .filter((index) => index != null);
+      if (!markerPositions.length) return;
+
+      const notes = (tune.getSelectableArray?.() ?? [])
+        .filter((selectable) => selectable?.absEl?.abcelem?.el_type === "note")
+        .sort(
+          (left, right) =>
+            (left.absEl.abcelem.startChar ?? 0) -
+            (right.absEl.abcelem.startChar ?? 0),
+        );
+      const noteEntries = notes.map((selectable) => ({
+        selectable,
+        start: selectable.absEl.abcelem.startChar,
+        end: selectable.absEl.abcelem.endChar,
+      }));
+
+      for (const marker of markerPositions) {
+        const sourceIndex = noteEntries.findIndex(
+          (entry) => entry.start != null && marker >= entry.start && marker < entry.end,
+        );
+        if (sourceIndex < 0 || sourceIndex + 1 >= noteEntries.length) continue;
+        const from = noteEntries[sourceIndex].selectable.svgEl;
+        const to = noteEntries[sourceIndex + 1].selectable.svgEl;
+        const fromBox = from?.getBBox?.();
+        const toBox = to?.getBBox?.();
+        if (!fromBox || !toBox) continue;
+
+        const x1 = fromBox.x + fromBox.width;
+        const y1 = fromBox.y + fromBox.height * 0.45;
+        const x2 = toBox.x;
+        const y2 = toBox.y + toBox.height * 0.45;
+        const distance = Math.max(12, x2 - x1);
+        const waves = Math.max(3, Math.round(distance / 9));
+        const amplitude = Math.min(5, Math.max(2.5, distance / 35));
+        const points = [];
+        for (let index = 0; index <= waves * 4; index++) {
+          const progress = index / (waves * 4);
+          const x = x1 + (x2 - x1) * progress;
+          const y =
+            y1 +
+            (y2 - y1) * progress +
+            Math.sin(progress * waves * Math.PI * 2) * amplitude;
+          points.push(`${x.toFixed(2)},${y.toFixed(2)}`);
+        }
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+        path.setAttribute("class", "abcjs-glissando-line");
+        path.setAttribute("points", points.join(" "));
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", "currentColor");
+        path.setAttribute("stroke-width", "2.2");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+        svg.appendChild(path);
+      }
     }
 
     if (player?.loaded && lastVisualObj) {

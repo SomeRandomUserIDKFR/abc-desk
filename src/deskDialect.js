@@ -1491,6 +1491,7 @@ function markGlissandoNotes(tracks, sourceText) {
       if (Number.isFinite(Number(note.pitch)) && Number.isFinite(Number(target.pitch))) {
         note.glissando = true;
         note.glissandoTargetPitch = target.pitch;
+        note.glissandoTargetStart = target.start;
       }
     }
   }
