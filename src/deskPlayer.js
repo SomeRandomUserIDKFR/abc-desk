@@ -1209,7 +1209,13 @@ function applyGlissandoMetadata(tracks, sourceText) {
   for (const marker of markers) {
     const match = allNotes.find(({ note }) => note.startChar >= marker);
     if (!match) continue;
-    const target = match.notes[match.noteIndex + 1];
+    const target =
+      match.notes[match.noteIndex + 1] ??
+      allNotes.find(
+        ({ note }) =>
+          note.startChar > match.note.startChar &&
+          note.startChar >= marker,
+      )?.note;
     if (!target) continue;
     if (
       Number.isFinite(Number(match.note.pitch)) &&
