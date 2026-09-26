@@ -185,6 +185,11 @@ soundfont playback remains unchanged.
 | `!gimplus!` | climactic hit — `gim+` + sfz |
 | `!grit!` `!whisper!` `!snap!` `!smear!` `!choke!` | attack / color marks |
 | `!ascent!` | rising approach — label + slide |
+| `!glissando!` / `!glisendo!` | glissando between adjacent notes — label + slide |
+
+In the experimental player, `!glissando!` (or the `!glisendo!` alias) adds a
+short, detached pitch sweep from the marked note to the following note. The
+notes keep their separate attacks; the sweep does not turn them into a slur.
 | `!cluster!c` / `!cluster5!e` | chord cluster around the note |
 
 ABC slurs such as `(ABc` use dedicated experimental violin articulation: notes

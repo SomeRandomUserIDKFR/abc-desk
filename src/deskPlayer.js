@@ -683,6 +683,13 @@ export function createTestingPlayer({
       performanceContext,
       roomMix,
     );
+    scheduleGlissandoAudio(
+      context,
+      input,
+      noteEvents,
+      secondsPerWholeNote,
+      passiveAudioNodes,
+    );
     roomBus = {
       input,
       roomNoise,
@@ -691,6 +698,52 @@ export function createTestingPlayer({
       vibratoLfo,
       vibratoWet,
     };
+  }
+
+  function scheduleGlissandoAudio(
+    context,
+    destination,
+    noteEvents,
+    wholeNoteSeconds,
+    nodes,
+  ) {
+    for (const event of noteEvents) {
+      if (!event.glissando || event.glissandoTargetPitch == null) continue;
+      const start = nowForEvent(event, wholeNoteSeconds, context);
+      const duration = Math.max(
+        0.025,
+        Math.min(0.09, eventDuration(event) * wholeNoteSeconds * 0.18),
+      );
+      const end = start + duration;
+      const from = pitchFrequency(event.pitch);
+      const to = pitchFrequency(event.glissandoTargetPitch);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) continue;
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "triangle";
+      oscillator.frequency.setValueAtTime(from, start);
+      oscillator.frequency.exponentialRampToValueAtTime(to, end);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.045, start + duration * 0.2);
+      gain.gain.linearRampToValueAtTime(0, end);
+      oscillator.connect(gain).connect(destination);
+      oscillator.start(start);
+      oscillator.stop(end + 0.01);
+      nodes.push(oscillator);
+    }
+  }
+
+  function nowForEvent(event, wholeNoteSeconds, context) {
+    return context.currentTime + Math.max(0, Number(event.start) || 0) * wholeNoteSeconds +
+      Math.max(0, eventDuration(event) * wholeNoteSeconds - Math.min(
+        0.09,
+        eventDuration(event) * wholeNoteSeconds * 0.18,
+      ));
+  }
+
+  function pitchFrequency(pitch) {
+    const value = Number(pitch);
+    return Number.isFinite(value) ? 440 * 2 ** ((value - 69) / 12) : NaN;
   }
 
 }

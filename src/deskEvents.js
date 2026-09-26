@@ -57,6 +57,8 @@ export function normalizePerformanceTracks(tracks) {
               direction: finiteNumber(event.portamento.direction),
             }
           : null,
+        glissando: Boolean(event.glissando),
+        glissandoTargetPitch: finiteNumber(event.glissandoTargetPitch),
         envelope: {
           attack: event.endType === "tenuto" ? 0.02 : 0.008,
           release: event.endType === "tenuto" ? 0.08 : 0.035,

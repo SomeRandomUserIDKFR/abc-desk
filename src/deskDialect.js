@@ -60,6 +60,14 @@ export const DESK_DECORATIONS = {
     label: "ascent",
     expandTo: '"^ascent"!slide!',
   },
+  glissando: {
+    label: "glissando",
+    expandTo: '"^glissando"!slide!',
+  },
+  glisendo: {
+    label: "glissando",
+    expandTo: '"^glissando"!slide!',
+  },
   xhead: {
     label: "x-head",
     expandTo: "!style=x!",
@@ -1009,6 +1017,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     }
   }
 
+  markGlissandoNotes(tracks, ctx?.sourceText);
   enhanceDynamicRamps(tracks, humanAmount);
 
   for (const track of tracks) {
@@ -1033,6 +1042,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       } else {
         factor *= (profile.shortBoost ?? 1) * (noteToneMix.shortBoost ?? 1) * (noteToneMix.attack ?? 1);
       }
+
       if (family === "strings" && noteToneMix.attack && noteToneMix.attack > 1.5) {
         factor *= 1.24;
       }
@@ -1454,6 +1464,36 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   addPercussionMarkers(tracks, ctx);
 
   return tracks;
+}
+
+function markGlissandoNotes(tracks, sourceText) {
+  if (!sourceText) return;
+  const markers = [];
+  const markerRe = /"\^glissando"\s*!slide!/gi;
+  for (const match of sourceText.matchAll(markerRe)) {
+    if (match.index != null) markers.push(match.index);
+  }
+  if (!markers.length) return;
+
+  for (const track of tracks) {
+    const notes = track.filter((event) => event.cmd === "note");
+    for (let index = 0; index < notes.length - 1; index++) {
+      const note = notes[index];
+      if (
+        note.startChar == null ||
+        !markers.some(
+          (marker) => marker >= note.startChar && marker < note.endChar,
+        )
+      ) {
+        continue;
+      }
+      const target = notes[index + 1];
+      if (Number.isFinite(Number(note.pitch)) && Number.isFinite(Number(target.pitch))) {
+        note.glissando = true;
+        note.glissandoTargetPitch = target.pitch;
+      }
+    }
+  }
 }
 
 function applyBowedStringArticulation(tracks, humanAmount) {
