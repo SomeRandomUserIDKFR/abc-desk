@@ -8,7 +8,11 @@ import {
   deskStatusFragment,
   filterDecorationWarnings,
 } from "./deskDialect.js";
-import { formatForDesk, parseParts } from "./deskParts.js";
+import {
+  formatForDesk,
+  normalizeInlineOverlayMeasures,
+  parseParts,
+} from "./deskParts.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
 import { createDeskPlayer, createTestingPlayer } from "./deskPlayer.js";
@@ -1519,14 +1523,7 @@ function enableSynth() {
  * Prepare source: multi-part assemble → Desk dialect preprocess.
  */
 function prepareSource(source) {
-  // Expand inline overlays before abcjs parses them. abcjs's overlay cursor can
-  // lose the default-length multiplier after dotted material, while the Desk
-  // part assembler preserves the exact durations with explicit rests.
-  const formattedOverlaySource =
-    !/^\s*Part\s*:/im.test(source) && /&/.test(source)
-      ? formatForDesk(source)
-      : null;
-  const normalizedSource = formattedOverlaySource || source;
+  const normalizedSource = normalizeInlineOverlayMeasures(source);
   const partInfo = parseParts(normalizedSource);
   let working = normalizedSource;
   /** @type {string[]} */

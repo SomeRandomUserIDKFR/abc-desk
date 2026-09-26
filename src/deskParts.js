@@ -70,7 +70,11 @@ export function formatForDesk(source) {
   for (const voice of voices) {
     const instrument = fields.Inst || instrumentForProgram(sharedProgram) ||
       inferPartInstrument(voice.name, voice.clef);
-    const overlays = splitOverlayVoices(sanitizeMusic(voice.lines.join("\n")), fields.L);
+    const overlays = splitOverlayVoices(
+      sanitizeMusic(voice.lines.join("\n")),
+      fields.L,
+      fields.M,
+    );
     overlays.forEach((body, index) => {
       const name = overlays.length > 1 ? `${voice.name} voice ${index + 1}` : voice.name;
       parts.push([
@@ -84,9 +88,62 @@ export function formatForDesk(source) {
   return `${parts.join("\n\n")}\n`;
 }
 
-function splitOverlayVoices(music, lengthField) {
+export function normalizeInlineOverlayMeasures(source) {
+  const lines = source.split(/\r?\n/);
+  const header = lines.slice(0, lines.findIndex((line) => /^\s*K\s*:/i.test(line)) + 1).join("\n");
+  const fields = extractFields(header);
+  const unit = parseLengthUnit(fields.L);
+  const meterDuration = parseMeterDuration(fields.M, unit);
+  if (!meterDuration) return source;
+
+  let inBody = false;
+  return lines
+    .map((line) => {
+      if (/^\s*K\s*:/i.test(line)) {
+        inBody = true;
+        return line;
+      }
+      if (!inBody || !line.includes("&")) return line;
+      return padInlineOverlayLine(line, unit, meterDuration);
+    })
+    .join("\n");
+}
+
+function padInlineOverlayLine(line, unit, meterDuration) {
+  const pieces = line.split(/(\|)/);
+  const output = [];
+  let bar = "";
+  const flush = (barline = "") => {
+    if (!bar.includes("&")) {
+      output.push(`${bar}${barline}`);
+      bar = "";
+      return;
+    }
+    const segments = bar.split("&").map((value) => value.trim());
+    const durations = segments.map((value) => abcDurationUnits(value, unit));
+    const target = Math.max(...durations, meterDuration);
+    output.push(
+      segments
+        .map((segment, index) =>
+          `${segment}${formatRest(target - durations[index], unit)}`,
+        )
+        .join(" & ") + barline,
+    );
+    bar = "";
+  };
+
+  for (const piece of pieces) {
+    if (piece === "|") flush("|");
+    else bar += `${bar ? " " : ""}${piece}`;
+  }
+  flush();
+  return output.join("");
+}
+
+function splitOverlayVoices(music, lengthField, meterField) {
   if (!music.includes("&")) return [music];
   const unit = parseLengthUnit(lengthField);
+  const meterDuration = parseMeterDuration(meterField, unit);
   const voices = [];
   const barTargets = [];
   let bar = "";
@@ -94,7 +151,7 @@ function splitOverlayVoices(music, lengthField) {
     const segments = bar.split("&").map((value) => value.trim()).filter(Boolean);
     if (!segments.length) return;
     const durations = segments.map((value) => abcDurationUnits(value, unit));
-    const target = Math.max(...durations);
+    const target = Math.max(...durations, meterDuration ?? 0);
     barTargets.push({ duration: target, barline });
     while (voices.length < segments.length) {
       voices.push(
@@ -127,6 +184,12 @@ function splitOverlayVoices(music, lengthField) {
 function parseLengthUnit(value) {
   const match = String(value || "1/8").match(/(\d+)\s*\/\s*(\d+)/);
   return match ? Number(match[1]) / Number(match[2]) : 0.125;
+}
+
+function parseMeterDuration(value, unit) {
+  const match = String(value || "").match(/(\d+)\s*\/\s*(\d+)/);
+  if (!match || !unit) return null;
+  return Number(match[1]) / Number(match[2]);
 }
 
 function abcDurationUnits(text, unit) {
