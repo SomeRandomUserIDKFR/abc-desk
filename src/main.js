@@ -8,7 +8,10 @@ import {
   deskStatusFragment,
   filterDecorationWarnings,
 } from "./deskDialect.js";
-import { formatForDesk, parseParts } from "./deskParts.js";
+import {
+  formatForDesk,
+  parseParts,
+} from "./deskParts.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
 import { createDeskPlayer, createTestingPlayer } from "./deskPlayer.js";
@@ -1519,12 +1522,8 @@ function enableSynth() {
  * Prepare source: multi-part assemble → Desk dialect preprocess.
  */
 function prepareSource(source) {
-  const overlaySource =
-    !/^\s*Part\s*:/im.test(source) && /&/.test(source)
-      ? formatForDesk(source)
-      : null;
-  const partInfo = parseParts(overlaySource ?? source);
-  let working = overlaySource ?? source;
+  const partInfo = parseParts(source);
+  let working = source;
   /** @type {string[]} */
   const extraWarnings = [...(partInfo.warnings || [])];
   let partsMeta = null;

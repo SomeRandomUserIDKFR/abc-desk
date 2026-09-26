@@ -982,6 +982,11 @@ export function toStrictAbc(source) {
 export function balanceHeldNotes(tracks, ctx = {}) {
   if (!tracks?.length) return tracks;
 
+  // abcjs may reuse the sequence when diagnostics and CreateSynth both call
+  // setUpAudio. Keep each callback pass independent instead of accumulating
+  // timing mutations on the source track objects.
+  tracks = tracks.map((track) => track.map((note) => ({ ...note })));
+
   const toneMix = ctx?.tone?.toneMix ?? {};
   const inlineToneChanges = [...(ctx?.inlineToneChanges ?? [])].sort((a, b) => a.at - b.at);
   const humanize = ctx?.humanize;

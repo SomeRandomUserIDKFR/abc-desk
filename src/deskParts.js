@@ -70,7 +70,7 @@ export function formatForDesk(source) {
   for (const voice of voices) {
     const instrument = fields.Inst || instrumentForProgram(sharedProgram) ||
       inferPartInstrument(voice.name, voice.clef);
-    const overlays = splitOverlayVoices(sanitizeMusic(voice.lines.join("\n")), fields.L);
+    const overlays = splitOverlayVoices(sanitizeMusic(voice.lines.join("\n")));
     overlays.forEach((body, index) => {
       const name = overlays.length > 1 ? `${voice.name} voice ${index + 1}` : voice.name;
       parts.push([
@@ -84,73 +84,8 @@ export function formatForDesk(source) {
   return `${parts.join("\n\n")}\n`;
 }
 
-function splitOverlayVoices(music, lengthField) {
-  if (!music.includes("&")) return [music];
-  const unit = parseLengthUnit(lengthField);
-  const voices = [];
-  const barTargets = [];
-  let bar = "";
-  const flush = (barline = "") => {
-    const segments = bar.split("&").map((value) => value.trim()).filter(Boolean);
-    if (!segments.length) return;
-    const durations = segments.map((value) => abcDurationUnits(value, unit));
-    const target = Math.max(...durations);
-    barTargets.push({ duration: target, barline });
-    while (voices.length < segments.length) {
-      voices.push(
-        barTargets
-          .slice(0, -1)
-          .map((barInfo) => `${formatRest(barInfo.duration, unit)}${barInfo.barline}`.trim()),
-      );
-    }
-    const fields = [...new Set(
-      segments.join(" ").match(/\[[A-Za-z][A-Za-z0-9]*:[^\]]*\]/g) || [],
-    )].join(" ");
-    segments.forEach((segment, index) => {
-      const sharedFields = fields && !segment.includes(fields) ? `${fields} ` : "";
-      voices[index].push(`${sharedFields}${segment}${formatRest(target - durations[index], unit)}${barline}`.trim());
-    });
-    for (let index = segments.length; index < voices.length; index++) {
-      voices[index].push(`${formatRest(target, unit)}${barline}`.trim());
-    }
-
-    bar = "";
-  };
-  for (const piece of music.split(/(\|)/)) {
-    if (piece === "|") flush("|");
-    else bar += `${bar ? " " : ""}${piece}`;
-  }
-  flush();
-  return voices.map((voice) => voice.join(" ").trim()).filter(Boolean);
-}
-
-function parseLengthUnit(value) {
-  const match = String(value || "1/8").match(/(\d+)\s*\/\s*(\d+)/);
-  return match ? Number(match[1]) / Number(match[2]) : 0.125;
-}
-
-function abcDurationUnits(text, unit) {
-  const tokens = text
-    .replace(/%.*$/gm, "")
-    .replace(/![^!]*!/g, "")
-    .replace(/\[[A-Za-z][A-Za-z0-9]*:[^\]]*\]/g, "")
-    .replace(/"[^"]*"/g, "")
-    .match(/(?:\[[^\]]+\]|[_=^]?[A-GGa-gxz][,']*)(?:\d+)?(?:\/\d*)?/g) || [];
-  return tokens.reduce((total, token) => {
-    if (token.startsWith("[")) {
-      const chordDurations = [...token.matchAll(/[_=^]?[A-Ga-g][,']*(\d+)?(?:\/(\d*))?/g)]
-        .map((match) => {
-          const numerator = Number(match[1] || 1);
-          const denominator = match[2] === "" ? 2 : Number(match[2] || 1);
-          return numerator / denominator;
-        });
-      return total + (Math.max(...chordDurations, 1) * unit);
-    }
-    const suffix = token.match(/(\d+)?(?:\/(\d*))?$/);
-    const numerator = Number(suffix?.[1] || 1);
-    const denominator = suffix?.[2] === "" ? 2 : Number(suffix?.[2] || 1);
-    return total + (numerator / denominator) * unit;
-  }, 0);
+function splitOverlayVoices(music) {
+  return [music.trim()].filter(Boolean);
 }
 
 function sanitizeMusic(music) {
@@ -187,13 +122,6 @@ function wrapMusicLines(music) {
   }
   if (line.trim()) lines.push(line.trim());
   return lines.join("\n");
-}
-
-function formatRest(duration, unit) {
-  const units = Math.round((duration / unit) * 16) / 16;
-  if (units <= 0.001) return "";
-  if (Number.isInteger(units)) return ` z${Math.max(1, units)}`;
-  return ` z${Math.round(units * 16)}/16`;
 }
 
 function readMidiProgram(text) {

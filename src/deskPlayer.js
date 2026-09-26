@@ -173,6 +173,7 @@ export function createTestingPlayer({
         bpm,
       );
       const sequence = visualObj.setUpAudio(currentAudioParams);
+      logPerformanceRests(sequence?.tracks ?? [], secondsPerWholeNote);
       const tracks = normalizePerformanceTracks(sequence?.tracks ?? []);
       for (const track of tracks) {
         for (const event of track) {
@@ -261,7 +262,6 @@ export function createTestingPlayer({
       synth?.stop?.();
       synth = nextSynth;
       await startPassiveSynths(request);
-      synth.start();
       connectRoom(
         synth,
         currentAudioParams?.callbackContext?.room,
@@ -271,6 +271,7 @@ export function createTestingPlayer({
         currentAudioParams?.callbackContext,
         events,
       );
+      synth.start();
       cursorControl.onStart({ events, secondsPerWholeNote });
       pausedSeconds = 0;
       playbackEnded = false;
@@ -326,31 +327,46 @@ export function createTestingPlayer({
 
   function scheduleCursor(fromSeconds) {
     const startedAt = performance.now() - fromSeconds * 1000;
-    timers.push(window.setInterval(() => {
-      cursorControl.onProgress((performance.now() - startedAt) / 1000);
-    }, 16));
-    for (const event of events) {
-      const eventSeconds = (Number(event.start) || 0) * secondsPerWholeNote;
-      if (eventSeconds < fromSeconds) continue;
-      const delay = Math.max(0, Math.round((eventSeconds - fromSeconds) * 1000));
-      timers.push(window.setTimeout(() => cursorControl.onEvent({
-        sourceEvent: event,
-        elements: event.elements || event.elts || [],
-        timelinePassive: event.timelinePassive,
-        highlightDuration: eventDuration(event) * secondsPerWholeNote * 1000,
-        playbackSeconds: eventSeconds,
-        left: 0,
-        top: 0,
-        height: 0,
-      }), delay));
-      timers.push(window.setTimeout(() => {
+    const scheduledEvents = [...events].sort(
+      (a, b) => (Number(a.start) || 0) - (Number(b.start) || 0),
+    );
+    let nextEventIndex = scheduledEvents.findIndex(
+      (event) => (Number(event.start) || 0) * secondsPerWholeNote >= fromSeconds,
+    );
+    if (nextEventIndex < 0) nextEventIndex = scheduledEvents.length;
+
+    const tick = () => {
+      const elapsedSeconds = Math.max(0, (performance.now() - startedAt) / 1000);
+      cursorControl.onProgress(elapsedSeconds);
+
+      // Voice 1 is the conductor. All other voices are released from this
+      // shared clock, so a rest in one voice cannot start its next note early.
+      const conductorSeconds = elapsedSeconds;
+      while (nextEventIndex < scheduledEvents.length) {
+        const event = scheduledEvents[nextEventIndex];
+        const eventSeconds = (Number(event.start) || 0) * secondsPerWholeNote;
+        if (eventSeconds > conductorSeconds + 0.001) break;
+        nextEventIndex += 1;
+        if (eventSeconds < fromSeconds) continue;
+        cursorControl.onEvent({
+          sourceEvent: event,
+          elements: event.elements || event.elts || [],
+          timelinePassive: event.timelinePassive,
+          highlightDuration: eventDuration(event) * secondsPerWholeNote * 1000,
+          playbackSeconds: eventSeconds,
+          left: 0,
+          top: 0,
+          height: 0,
+        });
         onPerformanceEvent?.({
           event,
           seconds: eventSeconds,
           duration: eventDuration(event) * secondsPerWholeNote,
         });
-      }, delay));
-    }
+      }
+    };
+    timers.push(window.setInterval(tick, 16));
+    tick();
     const end = Math.max(...events.map(eventEnd), 0);
     timers.push(window.setTimeout(() => {
       cursorControl.onFinished();
@@ -1038,6 +1054,46 @@ function eventDuration(event) {
     Number(event.duration) ||
       ((Number(event.end) || 0) - (Number(event.start) || 0)),
   );
+}
+
+function logPerformanceRests(tracks, wholeNoteSeconds) {
+  tracks.forEach((track, trackIndex) => {
+    const notes = track
+      .filter(
+        (event) =>
+          event?.cmd === "note" &&
+          Number.isFinite(Number(event.start)) &&
+          Number.isFinite(Number(event.duration)),
+      )
+      .sort((a, b) => Number(a.start) - Number(b.start));
+    let cursor = 0;
+    for (const note of notes) {
+      const start = Number(note.start);
+      if (start > cursor + 0.000001) {
+        console.log("[ABC Desk rest]", {
+          track: trackIndex,
+          source: "inferred-gap",
+          start: cursor,
+          duration: start - cursor,
+          seconds: (start - cursor) * wholeNoteSeconds,
+          nextNote: start,
+        });
+      }
+      cursor = Math.max(cursor, start + Number(note.duration));
+    }
+    for (const event of track) {
+      if (event?.cmd !== "note") {
+        console.log("[ABC Desk sequence gap]", {
+          track: trackIndex,
+          source: "abcjs-event",
+          cmd: event?.cmd,
+          start: Number(event?.start) || 0,
+          duration: Number(event?.duration) || 0,
+          seconds: (Number(event?.duration) || 0) * wholeNoteSeconds,
+        });
+      }
+    }
+  });
 }
 
 function eventEnd(event) {
