@@ -185,6 +185,10 @@ attenuated and their release is shortened slightly so repeated notes such as
 Glissando replay runs allow a small amount of additional gain headroom for
 accented notes without removing the output safety ceiling.
 
+Glissando runs inherit the active audio settings, including tone, humanization,
+room, distance, player count, voice placement, and soundfont volume, rather
+than using a separate dry instrument-only path.
+
 ### Note / expression marks
 
 | Write | Meaning |

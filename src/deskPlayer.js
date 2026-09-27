@@ -261,7 +261,7 @@ export function createTestingPlayer({
         nextSynth.init({ visualObj, options: currentAudioParams }).then(
           () => nextSynth.prime(),
         ),
-        prepareGlissandoRuns(events, currentAudioParams?.program, secondsPerWholeNote),
+        prepareGlissandoRuns(events, currentAudioParams, secondsPerWholeNote),
       ]);
       if (request !== playbackRequest) {
         nextSynth.stop?.();
@@ -694,10 +694,12 @@ export function createTestingPlayer({
     );
     scheduleGlissandoAudio(
       context,
-      context.destination,
+      input,
       noteEvents,
       secondsPerWholeNote,
       passiveAudioNodes,
+      currentAudioParams?.pan,
+      currentAudioParams?.callbackContext,
     );
     roomBus = {
       input,
@@ -715,6 +717,8 @@ export function createTestingPlayer({
     noteEvents,
     wholeNoteSeconds,
     nodes,
+    voicePans = [],
+    performanceContext = {},
   ) {
     for (const event of noteEvents) {
       if (!event.glissando || !event.glissandoRunBuffer) continue;
@@ -731,7 +735,20 @@ export function createTestingPlayer({
         0.6,
         Math.min(1.15, (Number(event.volume) || 80) / 100),
       );
-      source.connect(gain).connect(destination);
+      const panner = context.createStereoPanner();
+      const playerCount = Math.max(1, Number(performanceContext.players) || 1);
+      const spacing = Math.max(0.35, Number(performanceContext.distance) || 0);
+      const voicePan = Number(voicePans?.[event.trackIndex]);
+      const fallbackPan =
+        playerCount > 1
+          ? (event.trackIndex / Math.max(1, playerCount - 1) * 2 - 1) *
+            Math.min(0.78, 0.34 + playerCount * 0.035)
+          : 0;
+      panner.pan.value =
+        (Number.isFinite(voicePan) ? voicePan : fallbackPan) * spacing;
+      const ensembleScale = 1 / Math.sqrt(playerCount);
+      gain.gain.value *= ensembleScale;
+      source.connect(gain).connect(panner).connect(destination);
       source.start(start);
       nodes.push(source);
     }
@@ -744,7 +761,7 @@ export function createTestingPlayer({
    * Each note's duration is sized to fit the actual gap before the target
    * note starts, so the run lands right as the target note begins.
    */
-  async function prepareGlissandoRuns(noteEvents, program, wholeNoteSeconds) {
+  async function prepareGlissandoRuns(noteEvents, audioParams, wholeNoteSeconds) {
     const glissandoEvents = noteEvents.filter(
       (event) => event.glissando && event.glissandoTargetPitch != null,
     );
@@ -758,13 +775,17 @@ export function createTestingPlayer({
           ? Math.max(0.05, (targetStart - (Number(event.start) || 0)) * wholeNoteSeconds)
           : Math.max(0.05, eventDuration(event) * wholeNoteSeconds);
         const noteSeconds = Math.min(0.11, Math.max(0.03, availableSeconds / pitches.length));
-        const buffer = await buildGlissandoRunBuffer(pitches, noteSeconds, program);
+        const buffer = await buildGlissandoRunBuffer(
+          pitches,
+          noteSeconds,
+          audioParams,
+        );
         if (buffer) event.glissandoRunBuffer = buffer;
       }),
     );
   }
 
-  async function buildGlissandoRunBuffer(pitches, noteSeconds, program) {
+  async function buildGlissandoRunBuffer(pitches, noteSeconds, audioParams) {
     const noteText = pitches.map(midiPitchToAbcNote).filter(Boolean).join(" ");
     if (!noteText) return null;
     const bpm = Math.max(20, Math.round(60 / Math.max(0.02, noteSeconds)));
@@ -774,8 +795,17 @@ export function createTestingPlayer({
     const runSynth = new abcjs.synth.CreateSynth();
     // A short fade keeps each burst note distinct rather than slurring into
     // the next — a real glissando run, not overlapping decay tails.
-    const options = { fadeLength: 55 };
-    if (Number.isFinite(program)) options.program = program;
+    const options = {
+      ...audioParams,
+      fadeLength: Math.min(120, Math.max(45, Number(audioParams?.fadeLength) || 55)),
+      callbackContext: audioParams?.callbackContext
+        ? {
+            ...audioParams.callbackContext,
+            sourceText: abcSource,
+            timelinePassives: [],
+          }
+        : undefined,
+    };
     try {
       await runSynth.init({ visualObj: tuneObj, options });
       await runSynth.prime();
