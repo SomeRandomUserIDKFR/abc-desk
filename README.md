@@ -178,6 +178,10 @@ expression curves, per-note articulation envelopes, and player metadata. These
 are currently used for diagnostics and as extension points; the existing
 soundfont playback remains unchanged.
 
+Piano playback applies a modest register-aware mix: very low piano notes are
+attenuated and their release is shortened slightly so repeated notes such as
+`C,,` do not overpower the middle register.
+
 ### Note / expression marks
 
 | Write | Meaning |

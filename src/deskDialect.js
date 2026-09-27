@@ -1189,6 +1189,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     applyBowedStringArticulation(tracks, humanAmount);
     expandEnsembleTracks(tracks, ctx?.players, humanAmount);
   }
+  applyPianoRegisterMix(tracks, forceInst);
   for (const track of tracks) {
     track.sort((a, b) => {
       const aStart = Number(a.start);
@@ -1463,6 +1464,53 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   addPercussionMarkers(tracks, ctx);
 
   return tracks;
+}
+
+function applyPianoRegisterMix(tracks, forceInstrument) {
+  const forcedName = normalizeInstrumentName(forceInstrument);
+  const pianoForced =
+    forcedName === "acoustic-grand-piano" ||
+    forcedName === "piano" ||
+    forcedName === "bright-acoustic-piano" ||
+    forcedName === "bright-piano";
+
+  for (const track of tracks) {
+    const notes = track
+      .filter(
+        (event) =>
+          event.cmd === "note" &&
+          Number.isFinite(Number(event.pitch)) &&
+          Number.isFinite(Number(event.start)) &&
+          Number.isFinite(Number(event.end)),
+      )
+      .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+
+    for (const note of notes) {
+      const name = normalizeInstrumentName(note.instrument);
+      const isPiano =
+        pianoForced ||
+        name === "acoustic-grand-piano" ||
+        name === "piano" ||
+        name === "bright-acoustic-piano" ||
+        name === "bright-piano";
+      if (!isPiano) continue;
+
+      const pitch = Number(note.pitch);
+      if (pitch >= 60) continue;
+
+      // Keep the bottom octave present without letting it dominate the
+      // middle register when a piano accompaniment repeats rapidly.
+      const register = Math.max(0, Math.min(1, (60 - pitch) / 36));
+      const volumeFactor = 1 - register * 0.38;
+      if (note.volume != null) {
+        note.volume = Math.max(10, Math.round(note.volume * volumeFactor));
+      }
+
+      const duration = Math.max(0.001, note.end - note.start);
+      const releaseFactor = 1 - register * 0.24;
+      note.end = Math.max(note.start + 0.04, note.start + duration * releaseFactor);
+    }
+  }
 }
 
 function applyBowedStringArticulation(tracks, humanAmount) {
