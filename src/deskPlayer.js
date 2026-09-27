@@ -729,7 +729,7 @@ export function createTestingPlayer({
       source.buffer = runBuffer;
       gain.gain.value = Math.max(
         0.6,
-        Math.min(1, (Number(event.volume) || 80) / 100),
+        Math.min(1.15, (Number(event.volume) || 80) / 100),
       );
       source.connect(gain).connect(destination);
       source.start(start);

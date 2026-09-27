@@ -182,6 +182,9 @@ Piano playback applies a modest register-aware mix: very low piano notes are
 attenuated and their release is shortened slightly so repeated notes such as
 `C,,` do not overpower the middle register.
 
+Glissando replay runs allow a small amount of additional gain headroom for
+accented notes without removing the output safety ceiling.
+
 ### Note / expression marks
 
 | Write | Meaning |
