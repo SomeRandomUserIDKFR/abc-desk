@@ -17,6 +17,7 @@ export function lintComposition(source, cleanAbc, visualObj, meta = {}) {
   lintStructure(source, cleanAbc, issues);
   lintDynamics(source, issues);
   lintHolds(source, issues);
+  lintMismatchedTies(source, issues);
   if (visualObj) {
     lintFromTune(visualObj, issues);
   }
@@ -25,6 +26,44 @@ export function lintComposition(source, cleanAbc, visualObj, meta = {}) {
   }
 
   return issues.slice(0, 40);
+}
+
+function lintMismatchedTies(source, issues) {
+  const bodyStart = source.search(/^K:[^\n]*\n?/im);
+  if (bodyStart < 0) return;
+  const body = source.slice(bodyStart);
+  const tieRe = /([_^=]*[A-Ga-g][,']*(?:\d+)?(?:\/+\d*)?)[ \t]*-[ \t]*([_^=]*[A-Ga-g][,']*(?:\d+)?(?:\/+\d*)?)/g;
+  let match;
+  while ((match = tieRe.exec(body)) !== null) {
+    const left = parseTiePitch(match[1]);
+    const right = parseTiePitch(match[2]);
+    if (left == null || right == null || left === right) continue;
+    const start = bodyStart + match.index;
+    issues.push({
+      id: `mismatched-tie-${start}`,
+      severity: "warn",
+      message: `Tie connects different pitches (“${match[1]}-${match[2]}”) — plays normally; use (${match[1].replace(/\d.*$/, "")}${match[2].replace(/\d.*$/, "")}) for a slur or !glissando! for a slide`,
+      start,
+      end: start + match[0].length,
+    });
+  }
+}
+
+function parseTiePitch(token) {
+  const match = String(token).match(/^([_^=]*)([A-Ga-g])([,']*)/);
+  if (!match) return null;
+  const accidental =
+    match[1].split("").reduce(
+      (value, mark) => value + (mark === "^" ? 1 : mark === "_" ? -1 : 0),
+      0,
+    );
+  const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[match[2].toUpperCase()];
+  const octave = (match[2] === match[2].toLowerCase() ? 1 : 0) +
+    match[3].split("").reduce(
+      (value, mark) => value + (mark === "'" ? 1 : -1),
+      0,
+    );
+  return octave * 12 + base + accidental;
 }
 
 /** @param {LintIssue[]} issues */
