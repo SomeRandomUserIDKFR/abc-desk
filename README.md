@@ -193,6 +193,11 @@ Violin-family slurs use the customized performance engine's legato metadata:
 following-note attacks are softened and a quiet continuous bow-contact layer is
 added across connected slur groups when humanization is enabled.
 
+Tone profiles also apply modest body, presence, and air EQ in the shared
+playback chain. This keeps tone changes audible across regular notes,
+glissando runs, and violin slur layers without making them primarily volume
+presets.
+
 ### Note / expression marks
 
 | Write | Meaning |

@@ -546,6 +546,7 @@ export function createTestingPlayer({
     const playerCount = Math.max(1, Number(players) || 1);
     const directLevel = 1 - spacing * 0.28;
     const roomMix = room?.mix ?? 0;
+    const toneColor = performanceContext?.tone?.color ?? {};
     dry.gain.value = directLevel * (1 - roomMix);
     wet.gain.value = Math.min(0.6, roomMix + spacing * 0.18);
     preDelay.delayTime.value = room?.predelay ?? 0;
@@ -554,14 +555,17 @@ export function createTestingPlayer({
     wetFilter.Q.value = 0.35;
     warmth.type = "lowshelf";
     warmth.frequency.value = 180;
-    warmth.gain.value = 0.8;
+    warmth.gain.value = 0.8 + (Number(toneColor.body) || 0);
     presence.type = "peaking";
     presence.frequency.value = 4200;
     presence.Q.value = 0.8;
-    presence.gain.value = -2.5;
+    presence.gain.value = -2.5 + (Number(toneColor.presence) || 0);
     air.type = "highshelf";
     air.frequency.value = 7200;
-    air.gain.value = Math.min(2.2, 0.8 + roomMix * 4.5);
+    air.gain.value = Math.max(
+      -4,
+      Math.min(5, 0.8 + roomMix * 4.5 + (Number(toneColor.air) || 0)),
+    );
     input.connect(warmth).connect(presence).connect(air);
     air.connect(dry).connect(context.destination);
     if (room?.mix > 0) {

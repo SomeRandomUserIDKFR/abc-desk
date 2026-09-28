@@ -331,51 +331,61 @@ export const TONES = {
     label: "Neutral",
     options: { soundFontVolumeMultiplier: 1, swing: 0, fadeLength: 320 },
     toneMix: { attack: 1, sustain: 1, shortBoost: 1, holdBias: 1 },
+    color: { body: 0, presence: 0, air: 0 },
   },
   warm: {
     label: "Warm",
     options: { soundFontVolumeMultiplier: 0.78, swing: 0, fadeLength: 420 },
     toneMix: { attack: 0.88, sustain: 0.84, shortBoost: 0.8, holdBias: 0.8 },
+    color: { body: 1.8, presence: -1.5, air: -2.5 },
   },
   bright: {
     label: "Bright",
     options: { soundFontVolumeMultiplier: 1.35, swing: 0, fadeLength: 220 },
     toneMix: { attack: 1.28, sustain: 1.12, shortBoost: 1.2, holdBias: 1.08 },
+    color: { body: -1.2, presence: 2.5, air: 3 },
   },
   soft: {
     label: "Soft",
     options: { soundFontVolumeMultiplier: 0.58, swing: 0, fadeLength: 520 },
     toneMix: { attack: 0.72, sustain: 0.7, shortBoost: 0.68, holdBias: 0.66 },
+    color: { body: 0.8, presence: -2.2, air: -3.5 },
   },
   rustic: {
     label: "Rustic",
     options: { soundFontVolumeMultiplier: 0.85, swing: 0.12, fadeLength: 360 },
     toneMix: { attack: 1.05, sustain: 0.9, shortBoost: 1.08, holdBias: 0.88 },
+    color: { body: 1.2, presence: 1.4, air: -1.2 },
   },
   upbeat: {
     label: "Upbeat",
     options: { soundFontVolumeMultiplier: 1.18, swing: 0.25, fadeLength: 260 },
     toneMix: { attack: 1.24, sustain: 1.06, shortBoost: 1.3, holdBias: 1.08 },
+    color: { body: 0.2, presence: 1.4, air: 1.2 },
   },
   sorrow: {
     label: "Sorrow",
     options: { soundFontVolumeMultiplier: 0.62, swing: 0, fadeLength: 620 },
     toneMix: { attack: 0.75, sustain: 0.6, shortBoost: 0.7, holdBias: 0.58 },
+    color: { body: 1.4, presence: -2.4, air: -3.2 },
   },
   emotional: {
     label: "Emotional",
     options: { soundFontVolumeMultiplier: 0.92, swing: 0.08, fadeLength: 560 },
     toneMix: { attack: 0.92, sustain: 0.78, shortBoost: 0.86, holdBias: 0.74 },
+    color: { body: 0.8, presence: 0.7, air: 1.1 },
   },
   aggressive: {
     label: "Aggressive",
     options: { soundFontVolumeMultiplier: 1.35, swing: 0, fadeLength: 180 },
     toneMix: { attack: 1.9, sustain: 1.1, shortBoost: 1.65, holdBias: 1.2, articulation: 1.05 },
+    color: { body: -0.8, presence: 2.8, air: 1.8 },
   },
   swing: {
     label: "Swing",
     options: { soundFontVolumeMultiplier: 1.08, swing: 0.55, fadeLength: 240 },
     toneMix: { attack: 1.18, sustain: 1.02, shortBoost: 1.25, holdBias: 1.04 },
+    color: { body: 0.1, presence: 1.8, air: 1.5 },
   },
 };
 
