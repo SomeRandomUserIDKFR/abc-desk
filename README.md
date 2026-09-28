@@ -189,6 +189,10 @@ Glissando runs inherit the active audio settings, including tone, humanization,
 room, distance, player count, voice placement, and soundfont volume, rather
 than using a separate dry instrument-only path.
 
+Violin-family slurs use the customized performance engine's legato metadata:
+following-note attacks are softened and a quiet continuous bow-contact layer is
+added across connected slur groups when humanization is enabled.
+
 ### Note / expression marks
 
 | Write | Meaning |

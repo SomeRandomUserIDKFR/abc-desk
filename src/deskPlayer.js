@@ -692,6 +692,14 @@ export function createTestingPlayer({
       performanceContext,
       roomMix,
     );
+    scheduleSlurBowTexture(
+      context,
+      input,
+      noteEvents,
+      secondsPerWholeNote,
+      performanceContext,
+      roomMix,
+    );
     scheduleGlissandoAudio(
       context,
       input,
@@ -1050,6 +1058,109 @@ function scheduleBowContactTexture(
     source.connect(filter).connect(gain).connect(destination);
     source.start(startTime);
     source.stop(startTime + Math.min(0.16, Math.max(0.06, release + 0.05)));
+  }
+}
+
+function scheduleSlurBowTexture(
+  context,
+  destination,
+  noteEvents,
+  secondsPerWholeNote,
+  performanceContext,
+  roomMix,
+) {
+  const instrument = performanceContext?.forceInstrument;
+  if (!["violin", "fiddle", "viola"].includes(instrument)) return;
+  const humanAmount = Math.max(
+    0,
+    Math.min(1, Number(performanceContext?.humanize?.amount ?? 0) * 2),
+  );
+  if (!humanAmount) return;
+
+  const notesByTrack = new Map();
+  for (const note of noteEvents) {
+    if (
+      !note.slur &&
+      !note.slurContinuation ||
+      !Number.isFinite(Number(note.start)) ||
+      !Number.isFinite(Number(note.end))
+    ) {
+      continue;
+    }
+    const track = notesByTrack.get(note.trackIndex) ?? [];
+    track.push(note);
+    notesByTrack.set(note.trackIndex, track);
+  }
+
+  const now = context.currentTime + 0.015;
+  const noiseBuffer = createBowNoiseBuffer(context);
+  for (const notes of notesByTrack.values()) {
+    notes.sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+    let group = [];
+    for (const note of notes) {
+      if (
+        group.length &&
+        (!note.slurContinuation ||
+          note.start - group[group.length - 1].end > 0.08)
+      ) {
+        scheduleGroup(group);
+        group = [];
+      }
+      group.push(note);
+      if (!note.slur) {
+        scheduleGroup(group);
+        group = [];
+      }
+    }
+    scheduleGroup(group);
+  }
+
+  function scheduleGroup(group) {
+    if (group.length < 2) return;
+    const start = Math.max(0, Number(group[0].start) || 0);
+    const end = Math.max(
+      start + 0.08,
+      ...group.map((note) => Number(note.end) || start),
+    );
+    const averagePitch =
+      group.reduce((sum, note) => sum + (Number(note.pitch) || 60), 0) /
+      group.length;
+    const averageVolume =
+      group.reduce((sum, note) => sum + (Number(note.volume) || 64), 0) /
+      group.length;
+    const variation = stableNoise(
+      hashString(`slur-bow:${group[0].id}:${group.length}`),
+      0,
+    );
+    const source = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+    const startTime = now + start * secondsPerWholeNote;
+    const endTime = now + end * secondsPerWholeNote;
+    const intensity =
+      (0.00032 + Math.max(0, averageVolume - 48) / 127 * 0.00022) *
+      humanAmount *
+      (1 + roomMix * 0.25);
+    source.buffer = noiseBuffer;
+    source.loop = true;
+    source.playbackRate.value = 1 + variation * 0.04;
+    filter.type = "bandpass";
+    filter.frequency.value =
+      2500 + Math.max(0, Math.min(1800, averagePitch * 14)) + variation * 180;
+    filter.Q.value = 0.75 + (variation + 1) * 0.08;
+    gain.gain.setValueAtTime(0.00001, startTime);
+    gain.gain.linearRampToValueAtTime(
+      intensity,
+      startTime + Math.min(0.045, (endTime - startTime) * 0.12),
+    );
+    gain.gain.setValueAtTime(intensity * (0.88 + variation * 0.08), Math.max(
+      startTime,
+      endTime - Math.min(0.08, (endTime - startTime) * 0.18),
+    ));
+    gain.gain.linearRampToValueAtTime(0.00001, endTime);
+    source.connect(filter).connect(gain).connect(destination);
+    source.start(startTime);
+    source.stop(endTime + 0.02);
   }
 }
 

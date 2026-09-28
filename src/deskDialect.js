@@ -1555,6 +1555,8 @@ function applyBowedStringArticulation(tracks, humanAmount) {
           note.start + 0.01,
           Math.min(next.start + overlap, note.end + overlap),
         );
+        note.slur = true;
+        next.slurContinuation = true;
         note.articulation = wideLeap ? "portamento" : "legato";
         note.legatoBlend = Math.round(
           (0.72 + glideWeight * 0.2 + humanAmount * variation * 0.08) * 100,
@@ -1585,7 +1587,7 @@ function applyBowedStringArticulation(tracks, humanAmount) {
         if (next.volume != null) {
           next.volume = Math.max(
             12,
-            Math.round(next.volume * (0.965 - humanAmount * 0.02)),
+            Math.round(next.volume * (0.88 - humanAmount * 0.025)),
           );
         }
       } else {

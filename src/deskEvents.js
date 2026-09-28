@@ -30,6 +30,8 @@ export function normalizePerformanceTracks(tracks) {
         gap: finiteNumber(event.gap),
         endType: event.endType,
         articulation: normalizeArticulation(event.articulation ?? event.endType),
+        slur: Boolean(event.slur),
+        slurContinuation: Boolean(event.slurContinuation),
         legatoBlend: finiteNumber(event.legatoBlend),
         bowEngagement: finiteNumber(event.bowEngagement),
         bowContact: finiteNumber(event.bowContact),
