@@ -739,7 +739,11 @@ export function createTestingPlayer({
       const end = Number.isFinite(targetStart)
         ? context.currentTime + Math.max(0, targetStart) * wholeNoteSeconds
         : nowForEvent(event, wholeNoteSeconds, context) + runBuffer.duration;
-      const start = Math.max(context.currentTime, end - runBuffer.duration);
+      const musicalDuration = Number(event.glissandoDurationSeconds);
+      const duration = Number.isFinite(musicalDuration)
+        ? Math.min(runBuffer.duration, Math.max(0.05, musicalDuration))
+        : runBuffer.duration;
+      const start = Math.max(context.currentTime, end - duration);
       const source = context.createBufferSource();
       const gain = context.createGain();
       source.buffer = runBuffer;
@@ -761,7 +765,7 @@ export function createTestingPlayer({
       const ensembleScale = 1 / Math.sqrt(playerCount);
       gain.gain.value *= ensembleScale;
       source.connect(gain).connect(panner).connect(destination);
-      source.start(start);
+      source.start(start, 0, duration);
       nodes.push(source);
     }
   }
@@ -792,7 +796,10 @@ export function createTestingPlayer({
           noteSeconds,
           audioParams,
         );
-        if (buffer) event.glissandoRunBuffer = buffer;
+        if (buffer) {
+          event.glissandoRunBuffer = buffer;
+          event.glissandoDurationSeconds = availableSeconds;
+        }
       }),
     );
   }
@@ -801,7 +808,11 @@ export function createTestingPlayer({
     const noteText = pitches.map(midiPitchToAbcNote).filter(Boolean).join(" ");
     if (!noteText) return null;
     const bpm = Math.max(20, Math.round(60 / Math.max(0.02, noteSeconds)));
-    const abcSource = `X:1\nL:1/8\nQ:1/8=${bpm}\nK:C\n${noteText}|`;
+    const program = Number(audioParams?.program);
+    const instrumentLine = Number.isInteger(program)
+      ? `%%MIDI program ${program}\n`
+      : "";
+    const abcSource = `X:1\nL:1/8\nQ:1/8=${bpm}\n${instrumentLine}K:C\n${noteText}|`;
     const tuneObj = abcjs.parseOnly(abcSource)?.[0];
     if (!tuneObj) return null;
     const runSynth = new abcjs.synth.CreateSynth();
