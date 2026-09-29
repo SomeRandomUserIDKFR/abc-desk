@@ -1347,16 +1347,16 @@ function applyGlissandoMetadata(tracks, sourceText) {
 
   // A decoration always attaches to the very next note token in the source
   // text, regardless of which voice/overlay track it belongs to. Flatten
-  // every track's notes (keeping each note's position within its own track
-  // so we can find its follow-up note) and sort by source position.
+  // every track's notes and sort by source position. Overlay material can be
+  // emitted on a different track even though it is the next source token.
   const allNotes = [];
   tracks.forEach((track) => {
     const notes = track.filter(
       (event) => event.cmd === "note" && !event.ensembleReplica,
     );
-    notes.forEach((note, noteIndex) => {
+    notes.forEach((note) => {
       if (note.startChar == null) return;
-      allNotes.push({ note, notes, noteIndex });
+      allNotes.push({ note });
     });
   });
   if (!allNotes.length) return;
@@ -1365,13 +1365,11 @@ function applyGlissandoMetadata(tracks, sourceText) {
   for (const marker of markers) {
     const match = allNotes.find(({ note }) => note.startChar >= marker);
     if (!match) continue;
-    const target =
-      match.notes[match.noteIndex + 1] ??
-      allNotes.find(
-        ({ note }) =>
-          note.startChar > match.note.startChar &&
-          note.startChar >= marker,
-      )?.note;
+    const target = allNotes.find(
+      ({ note }) =>
+        note.startChar > match.note.startChar &&
+        note.startChar >= marker,
+    )?.note;
     if (!target) continue;
     if (
       Number.isFinite(Number(match.note.pitch)) &&
