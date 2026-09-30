@@ -257,19 +257,14 @@ export function createTestingPlayer({
     const request = ++playbackRequest;
     const nextSynth = new abcjs.synth.CreateSynth();
     try {
-      await Promise.all([
-        nextSynth.init({ visualObj, options: currentAudioParams }).then(
-          () => nextSynth.prime(),
-        ),
-        prepareGlissandoRuns(events, currentAudioParams, secondsPerWholeNote),
-      ]);
+      await nextSynth.init({ visualObj, options: currentAudioParams });
+      await nextSynth.prime();
       if (request !== playbackRequest) {
         nextSynth.stop?.();
         return;
       }
       synth?.stop?.();
       synth = nextSynth;
-      await startPassiveSynths(request);
       synth.start();
       connectRoom(
         synth,
@@ -280,6 +275,26 @@ export function createTestingPlayer({
         currentAudioParams?.callbackContext,
         events,
       );
+      void startPassiveSynths(request).catch((error) => {
+        if (request === playbackRequest) onPlaybackError?.(error);
+      });
+      void prepareGlissandoRuns(
+        events,
+        currentAudioParams,
+        secondsPerWholeNote,
+      ).then(() => {
+        if (request !== playbackRequest || !roomBus) return;
+        const context = roomBus.input.context;
+        scheduleGlissandoAudio(
+          context,
+          roomBus.input,
+          events,
+          secondsPerWholeNote,
+          passiveAudioNodes,
+          currentAudioParams?.pan,
+          currentAudioParams?.callbackContext,
+        );
+      });
       cursorControl.onStart({ events, secondsPerWholeNote });
       pausedSeconds = 0;
       playbackEnded = false;
@@ -704,15 +719,6 @@ export function createTestingPlayer({
       performanceContext,
       roomMix,
     );
-    scheduleGlissandoAudio(
-      context,
-      input,
-      noteEvents,
-      secondsPerWholeNote,
-      passiveAudioNodes,
-      currentAudioParams?.pan,
-      currentAudioParams?.callbackContext,
-    );
     roomBus = {
       input,
       roomNoise,
@@ -739,6 +745,7 @@ export function createTestingPlayer({
       const end = Number.isFinite(targetStart)
         ? context.currentTime + Math.max(0, targetStart) * wholeNoteSeconds
         : nowForEvent(event, wholeNoteSeconds, context) + runBuffer.duration;
+      if (end <= context.currentTime + 0.01) continue;
       const musicalDuration = Number(event.glissandoDurationSeconds);
       const duration = Number.isFinite(musicalDuration)
         ? Math.min(runBuffer.duration, Math.max(0.05, musicalDuration))
