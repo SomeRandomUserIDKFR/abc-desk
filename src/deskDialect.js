@@ -1521,8 +1521,9 @@ function applyPianoRegisterMix(tracks, forceInstrument) {
       note.end = Math.max(note.start + 0.04, note.start + duration * releaseFactor);
     }
   }
+}
 
-  function limitPolyphony(tracks, scale) {
+function limitPolyphony(tracks, scale) {
     if (!Number.isFinite(scale) || scale >= 1) return tracks;
     const notes = tracks
       .flat()
@@ -1594,7 +1595,6 @@ function applyPianoRegisterMix(tracks, forceInstrument) {
       }
     }
     return tracks;
-  }
 }
 
 function applyBowedStringArticulation(tracks, humanAmount) {
