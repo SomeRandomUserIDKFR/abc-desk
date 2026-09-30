@@ -552,6 +552,27 @@ html[data-cursor-style="next-note"] .cursor-mimic-shape {
   font-family: var(--font-mono);
 }
 
+.timeline-polyphony {
+  display: grid;
+  grid-template-columns: auto minmax(8rem, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.timeline-polyphony input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.timeline-polyphony output {
+  min-width: 3.5rem;
+  color: var(--text);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
 .timeline-track {
   position: relative;
   height: 2.25rem;

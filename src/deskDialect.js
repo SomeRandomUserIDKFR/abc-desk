@@ -1521,6 +1521,66 @@ function applyPianoRegisterMix(tracks, forceInstrument) {
       note.end = Math.max(note.start + 0.04, note.start + duration * releaseFactor);
     }
   }
+
+  function limitPolyphony(tracks, scale) {
+    if (!Number.isFinite(scale) || scale >= 1) return tracks;
+    const notes = tracks
+      .flat()
+      .filter(
+        (event) =>
+          event.cmd === "note" &&
+          Number.isFinite(Number(event.start)) &&
+          Number.isFinite(Number(event.end)),
+      )
+      .sort((a, b) => Number(a.start) - Number(b.start));
+    if (!notes.length) return tracks;
+
+    const boundaries = [...new Set(notes.map((note) => Number(note.start)))].sort(
+      (a, b) => a - b,
+    );
+    let peak = 0;
+    for (const start of boundaries) {
+      peak = Math.max(
+        peak,
+        notes.filter(
+          (note) =>
+            Number(note.start) <= start && Number(note.end) > start,
+        ).length,
+      );
+    }
+    // Keep the normal point bounded so the upper half of the control provides
+    // useful headroom for unusually dense scores instead of becoming a no-op.
+    const normalLimit = Math.min(64, peak);
+    const limit = Math.max(1, Math.ceil(normalLimit * Math.max(0.01, scale)));
+    if (limit >= peak) return tracks;
+
+    const kept = new Set();
+    let active = [];
+    for (const start of boundaries) {
+      active = active.filter((note) => kept.has(note) && Number(note.end) > start);
+      const starting = notes.filter((note) => Number(note.start) === start);
+      const candidates = [...active, ...starting];
+      candidates.sort(
+        (a, b) =>
+          (Number(b.volume) || 0) - (Number(a.volume) || 0) ||
+          Number(a.start) - Number(b.start),
+      );
+      const selected = candidates.slice(0, limit);
+      for (const note of candidates) {
+        if (!selected.includes(note)) kept.delete(note);
+      }
+      for (const note of selected) kept.add(note);
+      active = selected;
+    }
+
+    for (const track of tracks) {
+      for (let index = track.length - 1; index >= 0; index--) {
+        const event = track[index];
+        if (event.cmd === "note" && !kept.has(event)) track.splice(index, 1);
+      }
+    }
+    return tracks;
+  }
 }
 
 function applyBowedStringArticulation(tracks, humanAmount) {
@@ -2177,12 +2237,15 @@ export function programToSoundfontName(program) {
  * Do not pass options.program — it fights / shadows the standard directive.
  * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, room?: ReturnType<typeof resolveRoom>, midiProgram?: number, hasMultipleMidiPrograms?: boolean }} meta
  */
-export function deskAudioParams(meta) {
+export function deskAudioParams(meta, settings = {}) {
   const program = meta.hasMultipleMidiPrograms
     ? undefined
     : meta.midiProgram ?? meta.instrument?.program;
   const forceInstrument = programToSoundfontName(program);
   const pan = spreadVoicePan(meta.sourceText);
+  const polyphonyScale = Number.isFinite(Number(settings.polyphonyScale))
+    ? Number(settings.polyphonyScale)
+    : 1;
 
   const options = {
     chordsOff: false,
@@ -2198,13 +2261,14 @@ export function deskAudioParams(meta) {
       room: meta.room,
       distance: meta.distance,
       players: meta.players,
+      polyphonyScale,
       timelinePassives: meta.timelinePassives ?? meta.passives ?? [],
       adaptiveStrings: false,
       violinVibrato: forceInstrument === "violin",
     },
     pan,
-    sequenceCallback: (tracks, ctx) =>
-      balanceHeldNotes(tracks, {
+    sequenceCallback: (tracks, ctx) => {
+      const balanced = balanceHeldNotes(tracks, {
         forceInstrument: ctx?.forceInstrument ?? forceInstrument,
         sourceText: ctx?.sourceText ?? meta.sourceText,
         inlineToneChanges: ctx?.inlineToneChanges ?? meta.inlineToneChanges,
@@ -2218,7 +2282,12 @@ export function deskAudioParams(meta) {
         adaptiveStrings: ctx?.adaptiveStrings ?? false,
         expressionExpansion: ctx?.expressionExpansion ?? false,
         experimentalPerformance: ctx?.experimentalPerformance ?? false,
-      }),
+      });
+      return limitPolyphony(
+        balanced,
+        ctx?.polyphonyScale ?? polyphonyScale,
+      );
+    },
   };
 
   // Shared default for EVERY voice/overlay startVoice. Without this, & overlays

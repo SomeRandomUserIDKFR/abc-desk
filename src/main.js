@@ -330,6 +330,11 @@ app.innerHTML = `
               <p id="testing-metrics" class="lint-empty">Render a tune to inspect normalized playback events.</p>
               <div id="performance-timeline" class="performance-timeline" aria-label="Performance timeline" hidden>
                 <div class="timeline-header"><span>Performance map</span><span id="timeline-time">0.0s</span></div>
+                <div class="timeline-polyphony">
+                  <label for="timeline-polyphony">Polyphony</label>
+                  <input id="timeline-polyphony" type="range" min="0" max="100" step="1" value="50" aria-describedby="timeline-polyphony-value">
+                  <output id="timeline-polyphony-value" for="timeline-polyphony">1x</output>
+                </div>
                 <div class="timeline-track">
                   <div id="timeline-phrases" class="timeline-layer timeline-phrases"></div>
                   <div id="timeline-expression" class="timeline-layer timeline-expression"></div>
@@ -421,6 +426,8 @@ const timelineTempo = document.querySelector("#timeline-tempo");
 const timelinePassives = document.querySelector("#timeline-passives");
 const timelinePlayhead = document.querySelector("#timeline-playhead");
 const timelineLegend = document.querySelector("#timeline-legend");
+const timelinePolyphony = document.querySelector("#timeline-polyphony");
+const timelinePolyphonyValue = document.querySelector("#timeline-polyphony-value");
 
 customizeBtn.addEventListener("click", () => {
   const open = customizationMenu.hidden;
@@ -448,6 +455,46 @@ let player = null;
 let renderTimer = null;
 let lastVisualObj = null;
 let lastPrepared = null;
+let polyphonySliderPosition = 50;
+
+function polyphonyScaleFromSlider(position) {
+  const value = Math.max(0, Math.min(100, Number(position) || 0));
+  if (value >= 100) return Infinity;
+  if (value <= 50) return 10 ** (value / 25 - 2);
+  return 10 ** (((value - 50) / 45) * 2);
+}
+
+function formatPolyphonyScale(scale) {
+  if (!Number.isFinite(scale)) return "∞";
+  if (scale >= 10) return `${Math.round(scale)}x`;
+  if (scale >= 1) return `${scale.toFixed(1).replace(/\.0$/, "")}x`;
+  return `${scale.toFixed(2)}x`;
+}
+
+function createAudioParams(meta) {
+  return deskAudioParams(meta, {
+    polyphonyScale: polyphonyScaleFromSlider(polyphonySliderPosition),
+  });
+}
+
+function refreshPolyphonyControl() {
+  const scale = polyphonyScaleFromSlider(polyphonySliderPosition);
+  if (timelinePolyphony) timelinePolyphony.value = String(polyphonySliderPosition);
+  if (timelinePolyphonyValue) {
+    timelinePolyphonyValue.textContent = formatPolyphonyScale(scale);
+  }
+}
+
+timelinePolyphony?.addEventListener("input", () => {
+  polyphonySliderPosition = Number(timelinePolyphony.value);
+  refreshPolyphonyControl();
+  if (player?.loaded && lastVisualObj && lastPrepared) {
+    const audioParams = createAudioParams(lastPrepared.meta);
+    player.setTune(lastVisualObj, audioParams);
+    updateTestingMetrics();
+  }
+});
+refreshPolyphonyControl();
 let renderGen = 0;
 
 function safeFileStem(raw) {
@@ -1677,7 +1724,7 @@ function renderScore() {
     }
 
     if (player?.loaded && lastVisualObj) {
-      const audioParams = deskAudioParams(prepared.meta);
+      const audioParams = createAudioParams(prepared.meta);
       try {
         player.setTune(lastVisualObj, audioParams);
         player.disable(false);
@@ -1841,7 +1888,7 @@ audioEl.addEventListener("click", (event) => {
   try {
     enableSynth();
     if (player?.loaded && lastVisualObj && lastPrepared) {
-      const audioParams = deskAudioParams(lastPrepared.meta);
+      const audioParams = createAudioParams(lastPrepared.meta);
       player.setTune(lastVisualObj, audioParams);
       updateTestingMetrics();
     }
@@ -1913,7 +1960,7 @@ downloadWavBtn.addEventListener("click", async () => {
       setStatus("Render a tune before downloading WAV.", true);
       return;
     }
-    const audioParams = deskAudioParams(lastPrepared.meta);
+    const audioParams = createAudioParams(lastPrepared.meta);
     setStatus("Rendering WAV…");
     wav = await player.createWav(lastVisualObj, audioParams);
     triggerDownloadFromUrl(wav.url, `${tuneFileStem()}.wav`);

@@ -167,6 +167,11 @@ playback controls. Phrase spans, expression curves, and phrase-breath tempo
 shaping are shown as separate layers, with the playhead following the audible
 performance. Experimental phrasing now applies a small, deterministic
 ritardando toward phrase endings in addition to the existing dynamic arcs.
+The map also includes a logarithmic **Polyphony** control. Its center (`1x`) is
+the normal voice budget, the left edge (`0.01x`) keeps only the strongest
+overlapping voices, and the right edge disables the budget entirely (`∞`).
+Reduced settings use soft voice stealing based on note volume rather than
+changing note timing.
 
 The experimental player now converts abcjs audio output into an ABC Desk-owned
 performance event model before scheduling and highlighting. This keeps abcjs
