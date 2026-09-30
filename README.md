@@ -34,7 +34,7 @@ This route uses the real abcjs soundfont renderer with a small experimental test
 so instrument, tone, and Human settings remain audible while event counts and duration
 are exposed. The legacy player remains available under `#oldframework`. WAV export
 uses the same experimental Human/performance processing; the live Web Audio Room effect
-is playback-only.
+and user equalizer settings are also rendered into WAV exports.
 
 `#violin` loads the default tune with `Inst: violin` preselected. It is a convenience
 preset and does not overwrite shared tunes.
@@ -97,6 +97,7 @@ Put `%%MIDI program` **before** `K:` (in the header). After `K:` / mid-body it c
 - **Room:** experimental Web Audio acoustics — `dry`, `studio`, `chamber`, `concert`, `cathedral` (active in `#testingframework`). Concert models hall-like pre-delay, asymmetric early reflections, stereo width, and a frequency-damped late field; WAV export uses the same room model.
 - **Players:** experimental ensemble size, `1`–`32`; creates layered performers with independent phrase timing, gain, pitch drift, and stereo placement
 - **Distance:** experimental player spacing, `0`–`1`; increases stereo spread and room send
+- **Equalizer:** experimental 9-band master EQ with Flat, Warm, Bright, Piano clarity, and Bass reduction presets; custom settings affect live playback and WAV export
 - **Human: / Imperfect:** optional stacking humanization amount from `0` to `1` (`Human: 0.35`, `Imperfect: 0.7`, `%%desk-human 0.45`). The value is internally doubled and capped at full strength, so `0.5` is approximately the former maximum. It adds repeatable rubato, sound/volume variation, violin and bowed-string pressure/release imperfections, and slight cents drift for tunable instruments such as strings, woodwinds, brass, and bass. The intensity gently breathes over phrases instead of staying perfectly flat, and crescendo/diminuendo ramps receive small non-linear dynamic deviations. `0.1`–`0.2` is subtle; `0.2`–`0.35` is more expressive.
 - **Drum1: / Drum2:** drum sounds for `o` / `p` note-attached hits (also `!o!` / `!p!`; `acoustic-snare`, `bass-drum-1`, `closed-hi-hat`, or `35`–`81`)
 

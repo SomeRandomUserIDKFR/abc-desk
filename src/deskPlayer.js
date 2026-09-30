@@ -225,8 +225,13 @@ export function createTestingPlayer({
         await wavSynth.init({ visualObj: nextVisualObj, options });
         await wavSynth.prime();
         const room = options?.callbackContext?.room;
-        if (room && room.mix > 0) {
-          const rendered = await renderRoomWav(wavSynth.getAudioBuffer(), room);
+        const equalizer = options?.callbackContext?.equalizer;
+        if ((room && room.mix > 0) || equalizer?.enabled) {
+          const rendered = await renderRoomWav(
+            wavSynth.getAudioBuffer(),
+            room ?? { decay: 0.1, damping: 0.4, mix: 0 },
+            equalizer,
+          );
           return {
             url: URL.createObjectURL(rendered),
             stop: () => wavSynth.stop?.(),
@@ -539,6 +544,11 @@ export function createTestingPlayer({
     const vibratoWet = violinVibrato ? context.createGain() : null;
     const dry = context.createGain();
     const wet = context.createGain();
+    const masterInput = context.createGain();
+    const masterOutput = createMasterOutput(
+      context,
+      performanceContext?.equalizer,
+    );
     const roomProfile = room ?? { decay: 0.1, damping: 0.4, mix: 0 };
     const warmth = context.createBiquadFilter();
     const presence = context.createBiquadFilter();
@@ -582,9 +592,9 @@ export function createTestingPlayer({
       Math.min(5, 0.8 + roomMix * 4.5 + (Number(toneColor.air) || 0)),
     );
     input.connect(warmth).connect(presence).connect(air);
-    air.connect(dry).connect(context.destination);
+    air.connect(dry).connect(masterInput);
     if (room?.mix > 0) {
-      air.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(context.destination);
+      air.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(masterInput);
     }
     if (roomMix > 0) {
       for (const reflection of reflections) {
@@ -598,7 +608,7 @@ export function createTestingPlayer({
         (1 - spacing * 0.22) *
         Math.min(1.2, playerCount / 4);
       reflectionPan.pan.value = reflection.pan * (room?.width ?? 0.6) * Math.min(1, spacing + 0.2);
-      air.connect(delay).connect(reflectionGain).connect(reflectionPan).connect(context.destination);
+      air.connect(delay).connect(reflectionGain).connect(reflectionPan).connect(masterInput);
       }
     }
     const roomNoise = context.createBufferSource();
@@ -612,8 +622,10 @@ export function createTestingPlayer({
     roomNoiseGain.gain.value = roomMix > 0
       ? Math.min(0.002, 0.00035 + roomMix * 0.0012)
       : 0;
-    roomNoise.connect(roomNoiseFilter).connect(roomNoiseGain).connect(context.destination);
+    roomNoise.connect(roomNoiseFilter).connect(roomNoiseGain).connect(masterInput);
     roomNoise.start();
+    masterInput.connect(masterOutput.input);
+    masterOutput.output.connect(context.destination);
     nextSynth.directSource.forEach((source, index) => {
       source.disconnect();
       const playerGain = context.createGain();
@@ -1212,7 +1224,7 @@ function stableNoise(seed, index) {
   return ((value ^ (value >>> 16)) / 2147483648) * 2 - 1;
 }
 
-async function renderRoomWav(audioBuffer, room) {
+async function renderRoomWav(audioBuffer, room, equalizer) {
   const OfflineContext =
     window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!OfflineContext) {
@@ -1229,6 +1241,8 @@ async function renderRoomWav(audioBuffer, room) {
   const input = context.createGain();
   const dry = context.createGain();
   const wet = context.createGain();
+  const masterInput = context.createGain();
+  const masterOutput = createMasterOutput(context, equalizer);
   const warmth = context.createBiquadFilter();
   const presence = context.createBiquadFilter();
   const air = context.createBiquadFilter();
@@ -1257,8 +1271,8 @@ async function renderRoomWav(audioBuffer, room) {
   air.frequency.value = 7200;
   air.gain.value = Math.min(2.2, 0.8 + room.mix * 4.5);
   input.connect(warmth).connect(presence).connect(air);
-  air.connect(dry).connect(context.destination);
-  air.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(context.destination);
+  air.connect(dry).connect(masterInput);
+  air.connect(preDelay).connect(convolver).connect(wetFilter).connect(wet).connect(masterInput);
   const roomNoise = context.createBufferSource();
   roomNoise.buffer = createRoomNoiseBuffer(
     context,
@@ -1269,7 +1283,9 @@ async function renderRoomWav(audioBuffer, room) {
   roomNoiseFilter.frequency.value = 4200;
   roomNoiseFilter.Q.value = 0.25;
   roomNoiseGain.gain.value = Math.min(0.002, 0.00035 + room.mix * 0.0012);
-  roomNoise.connect(roomNoiseFilter).connect(roomNoiseGain).connect(context.destination);
+  roomNoise.connect(roomNoiseFilter).connect(roomNoiseGain).connect(masterInput);
+  masterInput.connect(masterOutput.input);
+  masterOutput.output.connect(context.destination);
   roomNoise.start();
   roomNoise.stop(context.length / audioBuffer.sampleRate);
   for (const reflection of [
@@ -1290,6 +1306,34 @@ async function renderRoomWav(audioBuffer, room) {
   source.connect(input);
   source.start();
   return encodeWav(await context.startRendering());
+}
+
+const EQUALIZER_FREQUENCIES = [62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+function createMasterOutput(context, equalizer = {}) {
+  const input = context.createGain();
+  let current = input;
+  const enabled = equalizer?.enabled === true;
+  for (const frequency of EQUALIZER_FREQUENCIES) {
+    if (!enabled) break;
+    const filter = context.createBiquadFilter();
+    filter.type = "peaking";
+    filter.frequency.value = frequency;
+    filter.Q.value = 1;
+    filter.gain.value = Math.max(
+      -12,
+      Math.min(12, Number(equalizer?.bands?.[frequency]) || 0),
+    );
+    current = current.connect(filter);
+  }
+  const limiter = context.createDynamicsCompressor();
+  limiter.threshold.value = -2;
+  limiter.knee.value = 4;
+  limiter.ratio.value = 12;
+  limiter.attack.value = 0.003;
+  limiter.release.value = 0.12;
+  current.connect(limiter);
+  return { input, output: limiter };
 }
 
 function encodeWav(audioBuffer) {

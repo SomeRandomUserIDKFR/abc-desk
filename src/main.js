@@ -269,9 +269,26 @@ app.innerHTML = `
           <option value="mimic-note">Mimic note</option>
           <option value="next-note">Next note</option>
         </select>
+        <button type="button" id="equalizer-open">Equalizer</button>
       </div>
     </div>
   </header>
+  <div id="equalizer-panel" class="equalizer-panel" hidden>
+    <div class="equalizer-header">
+      <strong>Equalizer</strong>
+      <button type="button" id="equalizer-close">Close</button>
+    </div>
+    <label class="equalizer-enabled"><input id="equalizer-enabled" type="checkbox"> On</label>
+    <label for="equalizer-preset">Preset</label>
+    <select id="equalizer-preset">
+      <option value="flat">Flat</option>
+      <option value="warm">Warm</option>
+      <option value="bright">Bright</option>
+      <option value="piano">Piano clarity</option>
+      <option value="bass-cut">Bass reduction</option>
+    </select>
+    <div id="equalizer-bands" class="equalizer-bands"></div>
+  </div>
   <main class="workspace">
     <section class="panel editor-panel" aria-label="ABC source">
       <div class="panel-header">
@@ -428,6 +445,12 @@ const timelinePlayhead = document.querySelector("#timeline-playhead");
 const timelineLegend = document.querySelector("#timeline-legend");
 const timelinePolyphony = document.querySelector("#timeline-polyphony");
 const timelinePolyphonyValue = document.querySelector("#timeline-polyphony-value");
+const equalizerOpen = document.querySelector("#equalizer-open");
+const equalizerClose = document.querySelector("#equalizer-close");
+const equalizerPanel = document.querySelector("#equalizer-panel");
+const equalizerEnabled = document.querySelector("#equalizer-enabled");
+const equalizerPreset = document.querySelector("#equalizer-preset");
+const equalizerBands = document.querySelector("#equalizer-bands");
 
 customizeBtn.addEventListener("click", () => {
   const open = customizationMenu.hidden;
@@ -456,6 +479,11 @@ let renderTimer = null;
 let lastVisualObj = null;
 let lastPrepared = null;
 let polyphonySliderPosition = 50;
+const equalizerFrequencies = [62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+const equalizerSettings = {
+  enabled: false,
+  bands: Object.fromEntries(equalizerFrequencies.map((frequency) => [frequency, 0])),
+};
 
 function polyphonyScaleFromSlider(position) {
   const value = Math.max(0, Math.min(100, Number(position) || 0));
@@ -474,7 +502,71 @@ function formatPolyphonyScale(scale) {
 function createAudioParams(meta) {
   return deskAudioParams(meta, {
     polyphonyScale: polyphonyScaleFromSlider(polyphonySliderPosition),
+    equalizer: equalizerSettings,
   });
+}
+
+const equalizerPresets = {
+  flat: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+  warm: [2, 2, 1, 0, -1, -1, -1, -2, -2],
+  bright: [-2, -1, 0, 1, 2, 3, 4, 3, 2],
+  piano: [-2, -1, 0, 1, 2, 2, 1, 2, 0],
+  "bass-cut": [-5, -3, -2, 0, 1, 1, 1, 0, 0],
+};
+
+function formatEqualizerFrequency(frequency) {
+  return frequency >= 1000 ? `${frequency / 1000} kHz` : `${frequency} Hz`;
+}
+
+function syncEqualizerControls() {
+  equalizerEnabled.checked = equalizerSettings.enabled;
+  for (const frequency of equalizerFrequencies) {
+    const input = equalizerBands.querySelector(`[data-frequency="${frequency}"]`);
+    const output = equalizerBands.querySelector(`[data-output="${frequency}"]`);
+    const value = Number(equalizerSettings.bands[frequency]) || 0;
+    if (input) input.value = String(value);
+    if (output) output.textContent = `${value > 0 ? "+" : ""}${value} dB`;
+  }
+}
+
+for (const frequency of equalizerFrequencies) {
+  const row = document.createElement("label");
+  row.className = "equalizer-band";
+  row.innerHTML = `<span>${formatEqualizerFrequency(frequency)}</span><input type="range" min="-12" max="12" step="1" value="0" data-frequency="${frequency}" aria-label="${formatEqualizerFrequency(frequency)} gain"><output data-output="${frequency}">0 dB</output>`;
+  equalizerBands.append(row);
+  row.querySelector("input").addEventListener("input", (event) => {
+    const value = Number(event.target.value) || 0;
+    equalizerSettings.bands[frequency] = value;
+    row.querySelector("output").textContent = `${value > 0 ? "+" : ""}${value} dB`;
+  });
+  row.querySelector("input").addEventListener("change", applyAudioSettings);
+}
+
+equalizerOpen?.addEventListener("click", () => {
+  equalizerPanel.hidden = false;
+});
+equalizerClose?.addEventListener("click", () => {
+  equalizerPanel.hidden = true;
+});
+equalizerEnabled?.addEventListener("change", () => {
+  equalizerSettings.enabled = equalizerEnabled.checked;
+  applyAudioSettings();
+});
+equalizerPreset?.addEventListener("change", () => {
+  const preset = equalizerPresets[equalizerPreset.value] ?? equalizerPresets.flat;
+  equalizerFrequencies.forEach((frequency, index) => {
+    equalizerSettings.bands[frequency] = preset[index];
+  });
+  syncEqualizerControls();
+  applyAudioSettings();
+});
+syncEqualizerControls();
+
+function applyAudioSettings() {
+  if (player?.loaded && lastVisualObj && lastPrepared) {
+    player.setTune(lastVisualObj, createAudioParams(lastPrepared.meta));
+    updateTestingMetrics();
+  }
 }
 
 function refreshPolyphonyControl() {

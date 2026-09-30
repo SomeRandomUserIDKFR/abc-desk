@@ -2260,6 +2260,7 @@ export function deskAudioParams(meta, settings = {}) {
   const polyphonyScale = Number.isFinite(Number(settings.polyphonyScale))
     ? Number(settings.polyphonyScale)
     : 1;
+  const equalizer = settings.equalizer ?? { enabled: false, bands: {} };
 
   const options = {
     chordsOff: false,
@@ -2276,6 +2277,7 @@ export function deskAudioParams(meta, settings = {}) {
       distance: meta.distance,
       players: meta.players,
       polyphonyScale,
+      equalizer,
       timelinePassives: meta.timelinePassives ?? meta.passives ?? [],
       adaptiveStrings: false,
       violinVibrato: forceInstrument === "violin",
