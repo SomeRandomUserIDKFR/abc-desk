@@ -126,6 +126,19 @@ body {
   align-items: center;
 }
 
+.measure-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.measure-format input {
+  width: 3.2rem;
+}
+
 select,
 button {
   font-family: var(--font-ui);

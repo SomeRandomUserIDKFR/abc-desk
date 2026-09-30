@@ -88,6 +88,34 @@ export function formatForDesk(source) {
   return `${parts.join("\n\n")}\n`;
 }
 
+export function formatMeasures(source, measuresPerLine = 4) {
+  const count = Math.max(1, Math.min(32, Math.round(Number(measuresPerLine) || 4)));
+  const output = [];
+  let musicLines = [];
+
+  const flushMusic = () => {
+    if (!musicLines.length) return;
+    output.push(...wrapMusicByMeasures(musicLines.join(" "), count));
+    musicLines = [];
+  };
+
+  for (const line of String(source ?? "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    const nonMusic =
+      !trimmed ||
+      trimmed.startsWith("%") ||
+      /^[A-Za-z][A-Za-z0-9]*\s*:/.test(trimmed);
+    if (nonMusic) {
+      flushMusic();
+      output.push(line);
+    } else {
+      musicLines.push(trimmed);
+    }
+  }
+  flushMusic();
+  return output.join("\n");
+}
+
 export function normalizeInlineOverlayMeasures(source) {
   const lines = source.split(/\r?\n/);
   const header = lines.slice(0, lines.findIndex((line) => /^\s*K\s*:/i.test(line)) + 1).join("\n");
@@ -244,12 +272,43 @@ function wrapMusicLines(music) {
       } else {
         line += " ";
       }
+
     } else if (piece.trim()) {
       line += `${piece.trim()} `;
     }
   }
   if (line.trim()) lines.push(line.trim());
   return lines.join("\n");
+}
+
+function wrapMusicByMeasures(music, measuresPerLine) {
+  const lines = [];
+  let current = "";
+  let measures = 0;
+  let index = 0;
+
+  while (index < music.length) {
+    if (music[index] !== "|") {
+      current += music[index++];
+      continue;
+    }
+
+    current += "|";
+    index++;
+    while (index < music.length && /[\]:\d]/.test(music[index])) {
+      current += music[index++];
+    }
+    measures++;
+    if (measures >= measuresPerLine) {
+      lines.push(current.trim());
+      current = "";
+      measures = 0;
+    } else {
+      current += " ";
+    }
+  }
+  if (current.trim()) lines.push(current.trim());
+  return lines;
 }
 
 function formatRest(duration, unit) {

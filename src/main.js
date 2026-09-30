@@ -10,6 +10,7 @@ import {
 } from "./deskDialect.js";
 import {
   formatForDesk,
+  formatMeasures,
   normalizeInlineOverlayMeasures,
   parseParts,
 } from "./deskParts.js";
@@ -312,6 +313,11 @@ app.innerHTML = `
           <button type="button" id="copy">Copy</button>
           <button type="button" id="copy-strict" title="Strip Desk tags; keep MIDI program">Copy strict</button>
           <button type="button" id="format-desk" title="Convert standard V: voices into Part: blocks">Format for ABC Desk</button>
+          <label class="measure-format">
+            Measures/line
+            <input id="measures-per-line" type="number" min="1" max="32" value="4" inputmode="numeric">
+          </label>
+          <button type="button" id="format-measures" title="Reflow music while preserving non-musical lines">Format measures</button>
           <button type="button" id="share" title="Copy shareable URL">Share</button>
           <button type="button" id="clear">Clear</button>
         </div>
@@ -424,6 +430,8 @@ const paper = document.querySelector("#paper");
 const statusEl = document.querySelector("#status");
 const sampleSelect = document.querySelector("#sample");
 const formatDeskBtn = document.querySelector("#format-desk");
+const formatMeasuresBtn = document.querySelector("#format-measures");
+const measuresPerLine = document.querySelector("#measures-per-line");
 const audioEl = document.querySelector("#audio");
 const lintList = document.querySelector("#lint-list");
 const lintCount = document.querySelector("#lint-count");
@@ -2025,6 +2033,20 @@ formatDeskBtn.addEventListener("click", () => {
   sampleSelect.value = "";
   renderScore();
   setStatus("Converted standard voices into ABC Desk Part: blocks.");
+});
+
+formatMeasuresBtn.addEventListener("click", () => {
+  const count = Math.max(1, Math.min(32, Number(measuresPerLine.value) || 4));
+  measuresPerLine.value = String(count);
+  const formatted = formatMeasures(editor.value, count);
+  if (formatted === editor.value) {
+    setStatus("Music is already formatted with the selected measure width.");
+    return;
+  }
+  editor.value = formatted;
+  sampleSelect.value = "";
+  renderScore();
+  setStatus(`Formatted music at ${count} measure${count === 1 ? "" : "s"} per line.`);
 });
 
 document.querySelector("#render-now").addEventListener("click", renderScore);
