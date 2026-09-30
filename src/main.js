@@ -485,14 +485,22 @@ function refreshPolyphonyControl() {
   }
 }
 
-timelinePolyphony?.addEventListener("input", () => {
-  polyphonySliderPosition = Number(timelinePolyphony.value);
-  refreshPolyphonyControl();
+function applyPolyphonySetting() {
   if (player?.loaded && lastVisualObj && lastPrepared) {
     const audioParams = createAudioParams(lastPrepared.meta);
     player.setTune(lastVisualObj, audioParams);
     updateTestingMetrics();
   }
+}
+
+timelinePolyphony?.addEventListener("input", () => {
+  polyphonySliderPosition = Number(timelinePolyphony.value);
+  refreshPolyphonyControl();
+});
+
+timelinePolyphony?.addEventListener("change", () => {
+  polyphonySliderPosition = Number(timelinePolyphony.value);
+  applyPolyphonySetting();
 });
 refreshPolyphonyControl();
 let renderGen = 0;

@@ -1538,15 +1538,22 @@ function applyPianoRegisterMix(tracks, forceInstrument) {
     const boundaries = [...new Set(notes.map((note) => Number(note.start)))].sort(
       (a, b) => a - b,
     );
+    const startsByTime = new Map();
+    for (const note of notes) {
+      const start = Number(note.start);
+      startsByTime.set(start, (startsByTime.get(start) ?? 0) + 1);
+    }
+    const ends = [...notes].sort((a, b) => Number(a.end) - Number(b.end));
+    let activeCount = 0;
+    let endIndex = 0;
     let peak = 0;
     for (const start of boundaries) {
-      peak = Math.max(
-        peak,
-        notes.filter(
-          (note) =>
-            Number(note.start) <= start && Number(note.end) > start,
-        ).length,
-      );
+      while (endIndex < ends.length && Number(ends[endIndex].end) <= start) {
+        activeCount--;
+        endIndex++;
+      }
+      activeCount += startsByTime.get(start) ?? 0;
+      peak = Math.max(peak, activeCount);
     }
     // Keep the normal point bounded so the upper half of the control provides
     // useful headroom for unusually dense scores instead of becoming a no-op.
@@ -1554,11 +1561,18 @@ function applyPianoRegisterMix(tracks, forceInstrument) {
     const limit = Math.max(1, Math.ceil(normalLimit * Math.max(0.01, scale)));
     if (limit >= peak) return tracks;
 
+    const notesByStart = new Map();
+    for (const note of notes) {
+      const start = Number(note.start);
+      const group = notesByStart.get(start) ?? [];
+      group.push(note);
+      notesByStart.set(start, group);
+    }
     const kept = new Set();
     let active = [];
     for (const start of boundaries) {
       active = active.filter((note) => kept.has(note) && Number(note.end) > start);
-      const starting = notes.filter((note) => Number(note.start) === start);
+      const starting = notesByStart.get(start) ?? [];
       const candidates = [...active, ...starting];
       candidates.sort(
         (a, b) =>
