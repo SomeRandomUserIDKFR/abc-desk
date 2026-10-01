@@ -159,9 +159,8 @@ function mergeOverlayMusic(musicParts) {
     const barline = entries.find((entry) => entry)?.match(/(\|[\]:\d]*)\s*$/)?.[1] || "|";
     const segments = entries.map((entry) => {
       const body = entry.replace(/\|[\]:\d]*\s*$/, "");
-      return body.replace(/(?:\s+z(?:\d+(?:\/\d*)?)?)+\s*$/gi, "").trim() || "z";
+      return stripPaddingRests(body);
     });
-    if (segments.every((segment) => segment === "z")) continue;
     output.push(`${segments.join(" & ")}${barline}`);
   }
   return output.join(" ");
@@ -172,6 +171,13 @@ function splitMusicBars(music) {
   const remainder = music.slice(bars.join("").length).trim();
   if (remainder) bars.push(remainder);
   return bars;
+}
+
+function stripPaddingRests(body) {
+  const trimmed = body.trim();
+  const restOnly = /^(?:z(?:\d+(?:\/\d*)?)?)(?:\s+z(?:\d+(?:\/\d*)?)?)*$/i;
+  if (restOnly.test(trimmed)) return trimmed;
+  return trimmed.replace(/(?:\s+z(?:\d+(?:\/\d*)?)?)+\s*$/gi, "").trim() || "z";
 }
 
 export function removeExtraSpaces(source) {
