@@ -287,13 +287,21 @@ function parseMeterDuration(value, unit) {
 }
 
 function abcDurationUnits(text, unit) {
-  const tokens = text
+  let tupletUnits = 0;
+  const withoutTriplets = text.replace(
+    /\(3((?:(?:\[[^\]]+\]|[_=^]?[A-Ga-gxz][,']*)(?:\d+)?(?:\/\d*)?){3})/g,
+    (_, notes) => {
+      tupletUnits += abcDurationUnits(notes, unit) * (2 / 3);
+      return "";
+    },
+  );
+  const tokens = withoutTriplets
     .replace(/%.*$/gm, "")
     .replace(/![^!]*!/g, "")
     .replace(/\[[A-Za-z][A-Za-z0-9]*:[^\]]*\]/g, "")
     .replace(/"[^"]*"/g, "")
     .match(/(?:\[[^\]]+\]|[_=^]?[A-GGa-gxz][,']*)(?:\d+)?(?:\/\d*)?/g) || [];
-  return tokens.reduce((total, token) => {
+  return tupletUnits + tokens.reduce((total, token) => {
     if (token.startsWith("[")) {
       const chordDurations = [...token.matchAll(/[_=^]?[A-Ga-g][,']*(\d+)?(?:\/(\d*))?/g)]
         .map((match) => {
