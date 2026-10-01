@@ -73,7 +73,6 @@ export function formatForDesk(source) {
     const overlays = splitOverlayVoices(
       sanitizeMusic(voice.lines.join("\n")),
       fields.L,
-      fields.M,
     );
     overlays.forEach((body, index) => {
       const name = overlays.length > 1 ? `${voice.name} voice ${index + 1}` : voice.name;
@@ -184,8 +183,7 @@ export function normalizeInlineOverlayMeasures(source) {
   const header = lines.slice(0, lines.findIndex((line) => /^\s*K\s*:/i.test(line)) + 1).join("\n");
   const fields = extractFields(header);
   const unit = parseLengthUnit(fields.L);
-  const meterDuration = parseMeterDuration(fields.M, unit);
-  if (!meterDuration) return source;
+  if (!unit) return source;
 
   let inBody = false;
   return lines
@@ -195,12 +193,12 @@ export function normalizeInlineOverlayMeasures(source) {
         return line;
       }
       if (!inBody || !line.includes("&")) return line;
-      return padInlineOverlayLine(line, unit, meterDuration);
+      return padInlineOverlayLine(line, unit);
     })
     .join("\n");
 }
 
-function padInlineOverlayLine(line, unit, meterDuration) {
+function padInlineOverlayLine(line, unit) {
   const pieces = line.split(/(\|)/);
   const output = [];
   let bar = "";
@@ -212,7 +210,7 @@ function padInlineOverlayLine(line, unit, meterDuration) {
     }
     const segments = bar.split("&").map((value) => value.trim());
     const durations = segments.map((value) => abcDurationUnits(value, unit));
-    const target = Math.max(...durations, meterDuration);
+    const target = Math.max(...durations);
     output.push(
       segments
         .map((segment, index) =>
@@ -231,10 +229,9 @@ function padInlineOverlayLine(line, unit, meterDuration) {
   return output.join("");
 }
 
-function splitOverlayVoices(music, lengthField, meterField) {
+function splitOverlayVoices(music, lengthField) {
   if (!music.includes("&")) return [music];
   const unit = parseLengthUnit(lengthField);
-  const meterDuration = parseMeterDuration(meterField, unit);
   const voices = [];
   const barTargets = [];
   let bar = "";
@@ -242,7 +239,7 @@ function splitOverlayVoices(music, lengthField, meterField) {
     const segments = bar.split("&").map((value) => value.trim()).filter(Boolean);
     if (!segments.length) return;
     const durations = segments.map((value) => abcDurationUnits(value, unit));
-    const target = Math.max(...durations, meterDuration ?? 0);
+    const target = Math.max(...durations);
     barTargets.push({ duration: target, barline });
     while (voices.length < segments.length) {
       voices.push(
