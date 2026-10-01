@@ -362,6 +362,11 @@ function wrapMusicByMeasures(music, measuresPerLine) {
     current += "|";
     index++;
     const openingRepeat = current.trim() === "|" && music[index] === ":";
+    const closingRepeat = music.slice(index).match(/^\s*:\|/);
+    if (closingRepeat) {
+      current += closingRepeat[0];
+      index += closingRepeat[0].length;
+    }
     while (index < music.length && /[\]:\d]/.test(music[index])) {
       current += music[index++];
     }
