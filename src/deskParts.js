@@ -113,7 +113,7 @@ export function formatToStandard(source) {
   ].filter(Boolean);
   const voices = [...groups.entries()].map(([clef, music], index) => [
     `V:${index + 1} clef=${clef}`,
-    music.join(" & "),
+    mergeOverlayMusic(music),
   ].join("\n"));
   if (firstFields.K) header.push(`K:${firstFields.K}`);
   return `${header.join("\n")}\n${voices.join("\n")}\n`;
@@ -149,6 +149,30 @@ export function formatMeasures(source, measuresPerLine = 4) {
 
 function inferStandardClef(name) {
   return /bass|cello|contrabass|trombone|baritone/i.test(name) ? "bass" : "treble";
+}
+
+function mergeOverlayMusic(musicParts) {
+  const bars = musicParts.map(splitMusicBars);
+  const output = [];
+  const barCount = Math.max(...bars.map((partBars) => partBars.length));
+  for (let index = 0; index < barCount; index++) {
+    const entries = bars.map((partBars) => partBars[index] || "");
+    const barline = entries.find((entry) => entry)?.match(/(\|[\]:\d]*)\s*$/)?.[1] || "|";
+    const segments = entries.map((entry) => {
+      const body = entry.replace(/\|[\]:\d]*\s*$/, "");
+      return body.replace(/(?:\s+z(?:\d+(?:\/\d*)?)?)+\s*$/gi, "").trim() || "z";
+    });
+    if (segments.every((segment) => segment === "z")) continue;
+    output.push(`${segments.join(" & ")}${barline}`);
+  }
+  return output.join(" ");
+}
+
+function splitMusicBars(music) {
+  const bars = music.match(/[^|]*\|[\]:\d]*/g) || [];
+  const remainder = music.slice(bars.join("").length).trim();
+  if (remainder) bars.push(remainder);
+  return bars;
 }
 
 export function removeExtraSpaces(source) {
