@@ -284,6 +284,8 @@ The source toolbar includes two small reflow helpers:
 - **Remove extra spaces** reduces each run of three or more literal spaces to
   two spaces. Single and double spaces are preserved, as are tabs and line
   breaks.
+- **Add padding** applies the same overlay alignment used at runtime, adding
+  rests only when one `&` segment is shorter than another.
 
 ### Share
 

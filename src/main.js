@@ -322,6 +322,7 @@ app.innerHTML = `
           </label>
           <button type="button" id="format-measures" title="Reflow music while preserving non-musical lines">Format measures</button>
           <button type="button" id="remove-extra-spaces" title="Reduce runs of three or more spaces to two">Remove extra spaces</button>
+          <button type="button" id="add-padding" title="Add only required rests to align overlay voices">Add padding</button>
           <button type="button" id="share" title="Copy shareable URL">Share</button>
           <button type="button" id="clear">Clear</button>
         </div>
@@ -437,6 +438,7 @@ const formatDeskBtn = document.querySelector("#format-desk");
 const formatStandardBtn = document.querySelector("#format-standard");
 const formatMeasuresBtn = document.querySelector("#format-measures");
 const removeExtraSpacesBtn = document.querySelector("#remove-extra-spaces");
+const addPaddingBtn = document.querySelector("#add-padding");
 const measuresPerLine = document.querySelector("#measures-per-line");
 const audioEl = document.querySelector("#audio");
 const lintList = document.querySelector("#lint-list");
@@ -2077,6 +2079,18 @@ removeExtraSpacesBtn.addEventListener("click", () => {
   sampleSelect.value = "";
   renderScore();
   setStatus("Reduced runs of spaces to at most two.");
+});
+
+addPaddingBtn.addEventListener("click", () => {
+  const formatted = normalizeInlineOverlayMeasures(editor.value);
+  if (formatted === editor.value) {
+    setStatus("No overlay padding is needed.");
+    return;
+  }
+  editor.value = formatted;
+  sampleSelect.value = "";
+  renderScore();
+  setStatus("Added only the padding needed to align overlay voices.");
 });
 
 document.querySelector("#render-now").addEventListener("click", renderScore);
