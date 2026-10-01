@@ -259,6 +259,12 @@ The **Format for ABC Desk** button also expands condensed ABC overlays such as
 rests so all generated parts remain aligned, and the source instrument is
 shared by the generated voices.
 
+The **Format to standard** button performs the reverse conversion: it groups
+`Part:` blocks by clef, emits standard `V:` declarations, and merges parts
+with the same clef using ABC overlay syntax (`&`). Clefs are read from a
+`Clef:` field when present; otherwise bass-family part names use `bass` and
+other names use `treble`.
+
 When a score uses `Part:` blocks, the **Parts** editor provides editable names
 and instrument selectors. Apply changes to rewrite only each part's metadata;
 the music body remains unchanged.
@@ -267,6 +273,17 @@ The same editor includes per-part **Mute**, **Solo**, and volume sliders for
 quickly isolating or balancing generated voices during playback. When source
 ABC uses `%%MIDI program`, formatting preserves that directive and does not
 add a conflicting `Inst:` line.
+
+### Source formatting tools
+
+The source toolbar includes two small reflow helpers:
+
+- **Format measures** wraps contiguous music at a selected number of
+  measures per line while preserving ABC fields, voice declarations,
+  comments, and blank lines.
+- **Remove extra spaces** reduces each run of three or more literal spaces to
+  two spaces. Single and double spaces are preserved, as are tabs and line
+  breaks.
 
 ### Share
 

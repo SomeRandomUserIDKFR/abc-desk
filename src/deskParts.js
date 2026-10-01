@@ -88,6 +88,37 @@ export function formatForDesk(source) {
   return `${parts.join("\n\n")}\n`;
 }
 
+export function formatToStandard(source) {
+  const parsed = parseParts(source);
+  if (!parsed.isMultiPart) return null;
+
+  const firstFields = extractFields(parsed.parts[0].body);
+  const groups = new Map();
+  parsed.parts.forEach((part) => {
+    const clef = part.clef || inferStandardClef(part.name);
+    const music = stripHeader(parseDeskHeaders(part.body).cleanAbc).trim();
+    if (!music) return;
+    if (!groups.has(clef)) groups.set(clef, []);
+    groups.get(clef).push(music);
+  });
+  if (!groups.size) return null;
+
+  const header = [
+    `X:${firstFields.X || 1}`,
+    firstFields.T ? `T:${firstFields.T}` : null,
+    firstFields.C ? `C:${firstFields.C}` : null,
+    firstFields.M ? `M:${firstFields.M}` : null,
+    firstFields.L ? `L:${firstFields.L}` : null,
+    firstFields.Q ? `Q:${firstFields.Q}` : null,
+  ].filter(Boolean);
+  const voices = [...groups.entries()].map(([clef, music], index) => [
+    `V:${index + 1} clef=${clef}`,
+    music.join(" & "),
+  ].join("\n"));
+  if (firstFields.K) header.push(`K:${firstFields.K}`);
+  return `${header.join("\n")}\n${voices.join("\n")}\n`;
+}
+
 export function formatMeasures(source, measuresPerLine = 4) {
   const count = Math.max(1, Math.min(32, Math.round(Number(measuresPerLine) || 4)));
   const output = [];
@@ -114,6 +145,14 @@ export function formatMeasures(source, measuresPerLine = 4) {
   }
   flushMusic();
   return output.join("\n");
+}
+
+function inferStandardClef(name) {
+  return /bass|cello|contrabass|trombone|baritone/i.test(name) ? "bass" : "treble";
+}
+
+export function removeExtraSpaces(source) {
+  return String(source ?? "").replace(/ {3,}/g, "  ");
 }
 
 export function normalizeInlineOverlayMeasures(source) {
@@ -295,10 +334,15 @@ function wrapMusicByMeasures(music, measuresPerLine) {
 
     current += "|";
     index++;
+    const openingRepeat = current.trim() === "|" && music[index] === ":";
     while (index < music.length && /[\]:\d]/.test(music[index])) {
       current += music[index++];
     }
-    measures++;
+    if (music[index] === "|") {
+      current += "|";
+      index++;
+    }
+    if (!openingRepeat) measures++;
     if (measures >= measuresPerLine) {
       lines.push(current.trim());
       current = "";
@@ -346,7 +390,7 @@ function readVoiceAttribute(attributes, name) {
 }
 
 /**
- * @typedef {{ name: string, transpose: number, instrument?: string, body: string, meter?: string, start: number }} DeskPart
+ * @typedef {{ name: string, transpose: number, instrument?: string, clef?: string, body: string, meter?: string, start: number }} DeskPart
  */
 
 /**
@@ -372,6 +416,7 @@ export function parseParts(source) {
         name: partMatch[1].trim(),
         transpose: 0,
         instrument: undefined,
+        clef: undefined,
         lines: [],
         start: offset,
         meter: undefined,
@@ -383,6 +428,8 @@ export function parseParts(source) {
       } else {
         const instrument = line.trim().match(/^Inst:\s*(.+)$/i);
         if (instrument) current.instrument = instrument[1].trim();
+        const clef = line.trim().match(/^Clef:\s*(.+)$/i);
+        if (clef) current.clef = clef[1].trim().toLowerCase();
         const m = line.trim().match(/^M:\s*(.+)$/i);
         if (m) current.meter = m[1].trim();
         current.lines.push(line);
@@ -458,6 +505,7 @@ function finalizePart(partial) {
     name: partial.name,
     transpose: partial.transpose,
     instrument: partial.instrument || instrumentForProgram(program) || undefined,
+    clef: partial.clef,
     body,
     meter: partial.meter,
     start: partial.start,

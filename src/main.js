@@ -10,7 +10,9 @@ import {
 } from "./deskDialect.js";
 import {
   formatForDesk,
+  formatToStandard,
   formatMeasures,
+  removeExtraSpaces,
   normalizeInlineOverlayMeasures,
   parseParts,
 } from "./deskParts.js";
@@ -313,11 +315,13 @@ app.innerHTML = `
           <button type="button" id="copy">Copy</button>
           <button type="button" id="copy-strict" title="Strip Desk tags; keep MIDI program">Copy strict</button>
           <button type="button" id="format-desk" title="Convert standard V: voices into Part: blocks">Format for ABC Desk</button>
+          <button type="button" id="format-standard" title="Merge Part: blocks into standard V: voices by clef">Format to standard</button>
           <label class="measure-format">
             Measures/line
             <input id="measures-per-line" type="number" min="1" max="32" value="4" inputmode="numeric">
           </label>
           <button type="button" id="format-measures" title="Reflow music while preserving non-musical lines">Format measures</button>
+          <button type="button" id="remove-extra-spaces" title="Reduce runs of three or more spaces to two">Remove extra spaces</button>
           <button type="button" id="share" title="Copy shareable URL">Share</button>
           <button type="button" id="clear">Clear</button>
         </div>
@@ -430,7 +434,9 @@ const paper = document.querySelector("#paper");
 const statusEl = document.querySelector("#status");
 const sampleSelect = document.querySelector("#sample");
 const formatDeskBtn = document.querySelector("#format-desk");
+const formatStandardBtn = document.querySelector("#format-standard");
 const formatMeasuresBtn = document.querySelector("#format-measures");
+const removeExtraSpacesBtn = document.querySelector("#remove-extra-spaces");
 const measuresPerLine = document.querySelector("#measures-per-line");
 const audioEl = document.querySelector("#audio");
 const lintList = document.querySelector("#lint-list");
@@ -2035,6 +2041,18 @@ formatDeskBtn.addEventListener("click", () => {
   setStatus("Converted standard voices into ABC Desk Part: blocks.");
 });
 
+formatStandardBtn.addEventListener("click", () => {
+  const formatted = formatToStandard(editor.value);
+  if (!formatted) {
+    setStatus("No Part: blocks with music found to convert.", true);
+    return;
+  }
+  editor.value = formatted;
+  sampleSelect.value = "";
+  renderScore();
+  setStatus("Converted Part: blocks into standard V: voices, merging matching clefs.");
+});
+
 formatMeasuresBtn.addEventListener("click", () => {
   const count = Math.max(1, Math.min(32, Number(measuresPerLine.value) || 4));
   measuresPerLine.value = String(count);
@@ -2047,6 +2065,18 @@ formatMeasuresBtn.addEventListener("click", () => {
   sampleSelect.value = "";
   renderScore();
   setStatus(`Formatted music at ${count} measure${count === 1 ? "" : "s"} per line.`);
+});
+
+removeExtraSpacesBtn.addEventListener("click", () => {
+  const formatted = removeExtraSpaces(editor.value);
+  if (formatted === editor.value) {
+    setStatus("No runs of more than two spaces found.");
+    return;
+  }
+  editor.value = formatted;
+  sampleSelect.value = "";
+  renderScore();
+  setStatus("Reduced runs of spaces to at most two.");
 });
 
 document.querySelector("#render-now").addEventListener("click", renderScore);
