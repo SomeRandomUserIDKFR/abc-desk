@@ -468,6 +468,26 @@ const equalizerEnabled = document.querySelector("#equalizer-enabled");
 const equalizerPreset = document.querySelector("#equalizer-preset");
 const equalizerBands = document.querySelector("#equalizer-bands");
 
+function replaceEditorValue(value) {
+  if (value === editor.value) return false;
+  editor.focus();
+  editor.setSelectionRange(0, editor.value.length);
+  if (!document.execCommand("insertText", false, value)) {
+    editor.value = value;
+  }
+  editor.setSelectionRange(value.length, value.length);
+  return true;
+}
+
+function replaceEditorSelection(value) {
+  editor.focus();
+  if (!document.execCommand("insertText", false, value)) {
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    editor.setRangeText(value, start, end, "end");
+  }
+}
+
 customizeBtn.addEventListener("click", () => {
   const open = customizationMenu.hidden;
   customizationMenu.hidden = !open;
@@ -2026,7 +2046,7 @@ editor.addEventListener("cut", () => scheduleRender());
 
 sampleSelect.addEventListener("change", () => {
   const key = sampleSelect.value;
-  editor.value = SAMPLES[key] ?? DEFAULT_ABC;
+  replaceEditorValue(SAMPLES[key] ?? DEFAULT_ABC);
   history.replaceState(null, "", window.location.pathname + window.location.search);
   renderScore();
 });
@@ -2037,7 +2057,7 @@ formatDeskBtn.addEventListener("click", () => {
     setStatus("No standard V: voices found to format, or the source already uses Part: blocks.", true);
     return;
   }
-  editor.value = formatted;
+  replaceEditorValue(formatted);
   sampleSelect.value = "";
   renderScore();
   setStatus("Converted standard voices into ABC Desk Part: blocks.");
@@ -2049,7 +2069,7 @@ formatStandardBtn.addEventListener("click", () => {
     setStatus("No Part: blocks with music found to convert.", true);
     return;
   }
-  editor.value = formatted;
+  replaceEditorValue(formatted);
   sampleSelect.value = "";
   renderScore();
   setStatus("Converted Part: blocks into standard V: voices, merging matching clefs.");
@@ -2063,7 +2083,7 @@ formatMeasuresBtn.addEventListener("click", () => {
     setStatus("Music is already formatted with the selected measure width.");
     return;
   }
-  editor.value = formatted;
+  replaceEditorValue(formatted);
   sampleSelect.value = "";
   renderScore();
   setStatus(`Formatted music at ${count} measure${count === 1 ? "" : "s"} per line.`);
@@ -2075,7 +2095,7 @@ removeExtraSpacesBtn.addEventListener("click", () => {
     setStatus("No runs of more than two spaces found.");
     return;
   }
-  editor.value = formatted;
+  replaceEditorValue(formatted);
   sampleSelect.value = "";
   renderScore();
   setStatus("Reduced runs of spaces to at most two.");
@@ -2087,7 +2107,7 @@ addPaddingBtn.addEventListener("click", () => {
     setStatus("No overlay padding is needed.");
     return;
   }
-  editor.value = formatted;
+  replaceEditorValue(formatted);
   sampleSelect.value = "";
   renderScore();
   setStatus("Added only the padding needed to align overlay voices.");
@@ -2212,7 +2232,7 @@ document.querySelector("#share").addEventListener("click", async () => {
 });
 
 document.querySelector("#clear").addEventListener("click", () => {
-  editor.value = "";
+  replaceEditorValue("");
   history.replaceState(null, "", window.location.pathname + window.location.search);
   renderScore();
 });
@@ -2220,10 +2240,7 @@ document.querySelector("#clear").addEventListener("click", () => {
 editor.addEventListener("keydown", (e) => {
   if (e.key === "Tab") {
     e.preventDefault();
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    editor.value = `${editor.value.slice(0, start)}  ${editor.value.slice(end)}`;
-    editor.selectionStart = editor.selectionEnd = start + 2;
+    replaceEditorSelection("  ");
     scheduleRender();
   }
 });
