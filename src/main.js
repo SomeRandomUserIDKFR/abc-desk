@@ -1856,6 +1856,23 @@ function readGraphicalLengthUnit(source) {
   return match ? Number(match[1]) / Number(match[2]) : 0.125;
 }
 
+function readGraphicalStaffStep(element) {
+  const wrapper = element.closest?.(".abcjs-staff-wrapper");
+  const lineCenters = [...(wrapper?.querySelectorAll?.("path,line,rect") ?? [])]
+    .map((line) => line.getBoundingClientRect())
+    .filter((box) => box.width > box.height * 8 && box.width > 80)
+    .map((box) => Math.round((box.top + box.bottom) / 2))
+    .sort((left, right) => left - right);
+  const gaps = lineCenters
+    .slice(1)
+    .map((center, index) => center - lineCenters[index])
+    .filter((gap) => gap > 1);
+  if (gaps.length) {
+    return gaps.sort((left, right) => left - right)[Math.floor(gaps.length / 2)];
+  }
+  return 10;
+}
+
 function attachGraphicalInteractions(prepared) {
   closeGraphicalMenu();
   paper.__graphicalDragCleanup?.();
@@ -1930,7 +1947,7 @@ function attachGraphicalInteractions(prepared) {
         note: abcElem,
         startY: event.clientY,
         releaseY: event.clientY,
-        staffStep: Math.max(4, (element.getBBox?.().height || 8) * 0.75),
+        staffStep: readGraphicalStaffStep(element),
         deltaY: 0,
         moved: false,
       };
