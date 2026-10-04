@@ -21,8 +21,8 @@ import {
   addChordTone,
   appendGraphicalNote,
   moveNoteToOverlay,
+  moveGraphicalNoteByStaffSteps,
   sourceCanBeEdited,
-  transposeGraphicalNote,
 } from "./deskGraphical.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
@@ -1878,15 +1878,15 @@ function attachGraphicalInteractions(prepared) {
     current.element.style.transform = "";
     current.element.dataset.graphicalDragged = current.moved ? "true" : "false";
     if (!current.moved) return;
-    const semitones = Math.round(
+    const staffSteps = Math.round(
       (current.startY - current.releaseY) / current.staffStep,
     );
-    if (!semitones) return;
-    const next = transposeGraphicalNote(
+    if (!staffSteps) return;
+    const next = moveGraphicalNoteByStaffSteps(
       editor.value,
       current.note.startChar,
       current.note.endChar,
-      semitones,
+      staffSteps,
     );
     if (!next) {
       setStatus("This note cannot be transposed safely.", true);
@@ -1894,7 +1894,7 @@ function attachGraphicalInteractions(prepared) {
     }
     replaceEditorValue(next);
     renderScore();
-    setStatus(`Moved note ${semitones > 0 ? "up" : "down"} ${Math.abs(semitones)} semitone${Math.abs(semitones) === 1 ? "" : "s"}.`);
+    setStatus(`Moved note ${staffSteps > 0 ? "up" : "down"} ${Math.abs(staffSteps)} staff step${Math.abs(staffSteps) === 1 ? "" : "s"}.`);
   };
   const moveDrag = (event) => {
     if (!activeDrag) return;

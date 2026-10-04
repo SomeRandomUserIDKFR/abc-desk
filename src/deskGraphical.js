@@ -78,6 +78,31 @@ export function transposeGraphicalNote(source, start, end, semitones) {
   return shifted === token ? null : replaceRange(source, start, end, shifted);
 }
 
+export function moveGraphicalNoteByStaffSteps(source, start, end, steps) {
+  const token = source.slice(start, end);
+  const match = token.match(NOTE_TOKEN_RE);
+  if (!match || token.startsWith("[")) return null;
+  const noteMatch = match[1].match(/^[_^=]*([A-Ga-g])([,']*)$/);
+  if (!noteMatch) return null;
+  const [, noteLetter, octaveMarks] = noteMatch;
+  const suffix = `${match[2]}${match[3]}`;
+  const letters = "CDEFGAB";
+  const letterIndex = letters.indexOf(noteLetter.toUpperCase());
+  if (letterIndex < 0) return null;
+  const octave =
+    (noteLetter === noteLetter.toLowerCase() ? 1 : 0) +
+    (octaveMarks.match(/'/g) || []).length -
+    (octaveMarks.match(/,/g) || []).length;
+  const target = octave * 7 + letterIndex + Math.round(Number(steps) || 0);
+  const targetOctave = Math.floor(target / 7);
+  const targetLetter = letters[((target % 7) + 7) % 7];
+  const targetToken =
+    targetOctave >= 1
+      ? `${targetLetter.toLowerCase()}${"'".repeat(targetOctave - 1)}`
+      : `${targetLetter}${",".repeat(-targetOctave)}`;
+  return replaceRange(source, start, end, `${targetToken}${suffix}`);
+}
+
 function replaceRange(source, start, end, replacement) {
   return `${source.slice(0, start)}${replacement}${source.slice(end)}`;
 }
