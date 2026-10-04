@@ -1868,7 +1868,10 @@ function readGraphicalStaffStep(element) {
     .map((center, index) => center - lineCenters[index])
     .filter((gap) => gap > 1);
   if (gaps.length) {
-    return gaps.sort((left, right) => left - right)[Math.floor(gaps.length / 2)];
+    const median = gaps.sort((left, right) => left - right)[Math.floor(gaps.length / 2)];
+    // ABC pitch positions advance by staff spaces; compensate for the SVG
+    // line-box padding so release positions align with note centers.
+    return median * 0.75;
   }
   return 10;
 }
