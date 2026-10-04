@@ -501,22 +501,45 @@ motifViewSelect.addEventListener("change", () => {
 
 function replaceEditorValue(value) {
   if (value === editor.value) return false;
-  editor.focus();
+  focusEditorWithoutScrolling();
   editor.setSelectionRange(0, editor.value.length);
   if (!document.execCommand("insertText", false, value)) {
     editor.value = value;
   }
   editor.setSelectionRange(value.length, value.length);
+  restoreEditorScroll();
   return true;
 }
 
 function replaceEditorSelection(value) {
-  editor.focus();
+  focusEditorWithoutScrolling();
   if (!document.execCommand("insertText", false, value)) {
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
     editor.setRangeText(value, start, end, "end");
   }
+  restoreEditorScroll();
+}
+
+let savedEditorScroll = null;
+
+function focusEditorWithoutScrolling() {
+  savedEditorScroll = {
+    pageX: window.scrollX,
+    pageY: window.scrollY,
+    editorTop: editor.scrollTop,
+    editorLeft: editor.scrollLeft,
+  };
+  editor.focus({ preventScroll: true });
+}
+
+function restoreEditorScroll() {
+  if (!savedEditorScroll) return;
+  const scroll = savedEditorScroll;
+  window.scrollTo(scroll.pageX, scroll.pageY);
+  editor.scrollTop = scroll.editorTop;
+  editor.scrollLeft = scroll.editorLeft;
+  savedEditorScroll = null;
 }
 
 customizeBtn.addEventListener("click", () => {
@@ -1939,12 +1962,13 @@ function attachGraphicalInteractions(prepared) {
   closeGraphicalMenu();
   paper.__graphicalDragCleanup?.();
   paper.__graphicalDragCleanup = null;
-  if (!graphicalEditorFramework) return;
   if (!sourceCanBeEdited(editor.value, prepared)) {
-    setStatus(
-      "Graphical editing is limited to plain single-voice ABC; use Source mode for Desk tags, motifs, or parts.",
-      true,
-    );
+    if (graphicalEditorFramework) {
+      setStatus(
+        "Graphical editing is limited to plain single-voice ABC; use Source mode for Desk tags, motifs, or parts.",
+        true,
+      );
+    }
     return;
   }
   const selectable = lastVisualObj?.getSelectableArray?.() ?? [];
@@ -2269,9 +2293,9 @@ function attachGraphicalInteractions(prepared) {
     const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     hitArea.classList.add("graphical-duration-hit-area");
     hitArea.setAttribute("x", String(box.x + box.width / 2 - 32));
-    hitArea.setAttribute("y", String(handleY - 16));
+    hitArea.setAttribute("y", String(handleY - 10));
     hitArea.setAttribute("width", "64");
-    hitArea.setAttribute("height", "32");
+    hitArea.setAttribute("height", "20");
     hitArea.setAttribute("fill", "transparent");
     hitArea.setAttribute("data-duration-handle", "true");
     hitArea.dataset.graphicalNoteIndex = handle.dataset.graphicalNoteIndex;
@@ -2386,6 +2410,10 @@ function renderScore() {
     const prepared = prepareSource(abc);
     if (gen !== renderGen) return;
     lastPrepared = prepared;
+    document.body.classList.toggle(
+      "graphical-interactions",
+      sourceCanBeEdited(abc, prepared),
+    );
 
     paper.innerHTML = "";
 
@@ -2394,11 +2422,12 @@ function renderScore() {
       add_classes: true,
       clickListener: (abcElem) => {
         if (abcElem?.startChar != null && abcElem?.endChar != null) {
-          editor.focus();
+          focusEditorWithoutScrolling();
           // Prefer selecting in original editor when single-part
           if (!prepared.partInfo.isMultiPart) {
             editor.setSelectionRange(abcElem.startChar, abcElem.endChar);
           }
+          restoreEditorScroll();
         }
       },
     });

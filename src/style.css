@@ -308,6 +308,54 @@ button.primary:hover {
   opacity: 0.85;
 }
 
+body.graphical-interactions .graphical-note {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+body.graphical-interactions .graphical-note:hover {
+  filter: drop-shadow(0 0 3px rgba(232, 196, 104, 0.9));
+}
+
+body.graphical-interactions .graphical-note-dragging {
+  cursor: grabbing;
+  filter: drop-shadow(0 0 5px rgba(232, 196, 104, 1));
+}
+
+body.graphical-interactions .graphical-note-ghost {
+  opacity: 0.45;
+  pointer-events: none;
+  filter: drop-shadow(0 0 4px rgba(232, 196, 104, 0.8));
+}
+
+body.graphical-interactions .graphical-barline {
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+body.graphical-interactions .graphical-duration-handle {
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+  cursor: ew-resize;
+  pointer-events: all;
+}
+
+body.graphical-interactions .graphical-duration-hit-area {
+  cursor: ew-resize;
+  pointer-events: all;
+}
+
+body.graphical-interactions .graphical-note:hover .graphical-duration-handle,
+body.graphical-interactions .graphical-duration-handle:hover,
+body.graphical-interactions .graphical-duration-handle-near {
+  opacity: 0.85;
+}
+
 .graphical-context-menu {
   position: fixed;
   z-index: 20;
