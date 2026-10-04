@@ -139,6 +139,20 @@ body {
   width: 3.2rem;
 }
 
+.score-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.score-view select {
+  max-width: 10rem;
+  padding: 0.3rem 0.45rem;
+}
+
 select,
 button {
   font-family: var(--font-ui);
@@ -217,6 +231,61 @@ button.primary:hover {
 
 #audio .abcjs-inline-audio {
   width: 100%;
+}
+
+.desk-motif-annotations rect {
+  fill: #e8c468;
+  fill-opacity: 0.18;
+  stroke: #c49b3d;
+  stroke-width: 1;
+}
+
+.desk-motif-annotations text {
+  fill: #163236;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.graphical-editor .workspace {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 1400px;
+}
+
+.graphical-editor .editor-panel {
+  display: none;
+}
+
+.graphical-editor .score-panel {
+  min-height: calc(100vh - 10rem);
+}
+
+.graphical-editor .graphical-note {
+  cursor: pointer;
+}
+
+.graphical-editor .graphical-note:hover {
+  filter: drop-shadow(0 0 3px rgba(232, 196, 104, 0.9));
+}
+
+.graphical-context-menu {
+  position: fixed;
+  z-index: 20;
+  display: grid;
+  gap: 0.25rem;
+  min-width: 13rem;
+  padding: 0.4rem;
+  background: var(--ink-soft);
+  border: 1px solid var(--accent-soft);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+.graphical-context-menu button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: 5px;
 }
 
 .equalizer-panel {

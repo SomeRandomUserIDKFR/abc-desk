@@ -231,8 +231,17 @@ while detached notes retain their normal bow changes and attacks.
 | `!xhead!` `!harmonic!` `!triangle!` `!rhythmhead!` | notehead styles |
 | `!crescendo(!` … `!crescendo)!` | hairpin up (Desk reshapes the ramp) |
 | `!diminuendo(!` … / `!descendo(!` | hairpin down (alias ok) |
+| `!accelerando(!` … `!accelerando)!` | tempo ramp up; single `!accelerando!` uses a short default ramp |
+| `!ritardando(!` … `!ritardando)!` | tempo ramp down; `!rallentando!`, `!rit!`, and `!rall!` are aliases |
 | `o` `O` / `!o!` `!O!` | drum hit 1 on the preceding note |
 | `p` `P` / `!p!` `!P!` | drum hit 2 on the preceding note |
+
+Tempo gestures are performance directives applied to the generated audio event
+timeline. The opening marker also becomes a small `accel.` or `rit.` text
+annotation in the score; the closing marker is timing-only. Paired markers
+ramp between their matching points. A single marker ramps over the next two
+whole-note units. Accelerando reaches approximately 35% faster and ritardando
+approximately 30% slower by the end of its default/paired span.
 
 ### Multi-part scores
 
@@ -287,6 +296,49 @@ The source toolbar includes two small reflow helpers:
 - **Add padding** applies the same overlay alignment used at runtime, adding
   rests only when one `&` segment is shorter than another.
 
+### Motif callbacks
+
+ABC Desk can define a reusable one-line motif and call it with transformations:
+
+```text
+Motif: rain-theme = E2.E.D E2.C.D .E.B.G.F2.E.D.C
+Call: rain-theme
+Call: rain-theme transpose=-2 octave=1 dynamics=mf
+```
+
+Motif calls are expanded before abcjs parses the tune, so playback, MIDI/WAV
+exports, and the normal score use ordinary generated ABC. The Score toolbar's
+**View** selector can switch to **Motif callbacks**, which adds a non-standard
+annotation strip to the rendered score and image/PDF exports without changing
+the played music.
+
+Supported call parameters:
+
+- `transpose=N` shifts every note by `N` semitones (`-24` to `24`).
+- `octave=N` shifts every note by `N` octaves (`-4` to `4`).
+- `repeat=N` repeats the expanded motif (`1` to `16` times).
+- `dynamics=ppp|pp|p|mp|mf|f|ff|fff|sfz` inserts that dynamic at the call.
+- `fragment=first:N` or `fragment=last:N` keeps only that many whitespace
+  tokens from the motif body.
+
+Parameters are explicit `key=value` tokens, and invalid or unknown parameters
+appear as render warnings rather than being silently ignored.
+
 ### Share
 
 **Share** copies a URL with the tune in the hash (`#d=...`). Open the link to reload that source.
+
+### Graphical editor preview
+
+Open `#graphicaleditor` for a score-first editing layout. In this first
+iteration, plain single-voice ABC can be edited without changing to the
+source panel:
+
+- Double-click or right-click empty score space to append a new `C` note.
+- Right-click a rendered note to add a third, fifth, or octave above it.
+- Right-click a rendered note and choose **Move to aligned voice (&)** to
+  replace it with an aligned overlay and generate the required padding rests.
+
+Graphical edits are source-backed and rerender the score. Desk tags, motif
+calls, multipart scores, chords, and other transformed sources remain
+source-only until their source-to-render mapping can be edited safely.

@@ -14,6 +14,8 @@ const MIDI_PROGRAM_LINE_RE = /^%%\s*MIDI\s+program\b(.*)$/i;
 const DRUM_FRIENDLY_RE = /^(Drum1|Drum2)\s*:\s*(.*)$/i;
 const DRUM_ENCODED_RE = /^(?:%%|I:)\s*desk-drum(1|2)\s+(.+)$/i;
 const DRUM_MARKER_RE = /^\s*(?:!([oOpP])!|([oOpP]))(?=$|[\s|:\]\)\}\/,;])/;
+const TEMPO_MARKER_RE =
+  /!(accelerando|accel|ritardando|rallentando|rit|rall)(\(!|\)!|!)/gi;
 const TIMELINE_PASSIVE_RE =
   /^(Echo|Flashback|Foreshadow|ReverseFlashback|Resolution)\s*:\s*(.*)$/i;
 const TIMELINE_PASSIVE_INLINE_RE =
@@ -99,6 +101,30 @@ export const DESK_DECORATIONS = {
   tremolo: {
     label: "tremolo",
     expandTo: "!tremolo!",
+  },
+  accelerando: {
+    label: "accel.",
+    expandTo: "!accelerando!",
+  },
+  accel: {
+    label: "accel.",
+    expandTo: "!accel!",
+  },
+  ritardando: {
+    label: "rit.",
+    expandTo: "!ritardando!",
+  },
+  rallentando: {
+    label: "rall.",
+    expandTo: "!rallentando!",
+  },
+  rit: {
+    label: "rit.",
+    expandTo: "!rit!",
+  },
+  rall: {
+    label: "rall.",
+    expandTo: "!rall!",
   },
 };
 
@@ -527,6 +553,17 @@ export function expandDeskDecorations(abc) {
     return def.expandTo;
   });
 
+  out = out.replace(TEMPO_MARKER_RE, (match, name, boundary) => {
+    const key = name.toLowerCase();
+    if (!used.includes(key)) used.push(key);
+    if (boundary === "(!" || boundary === "!") {
+      const label = key === "accelerando" || key === "accel" ? "accel." : "rit.";
+      const rendered = `"${label}"`;
+      return rendered + " ".repeat(Math.max(0, match.length - rendered.length));
+    }
+    return " ".repeat(match.length);
+  });
+
   const clustered = expandClusters(out);
   out = clustered.abc;
   for (const u of clustered.used) {
@@ -620,6 +657,12 @@ export function filterDecorationWarnings(warnings) {
     "choke",
     "o",
     "p",
+    "accelerando",
+    "accel",
+    "ritardando",
+    "rallentando",
+    "rit",
+    "rall",
   ]);
   return warnings.filter((w) => {
     const m = String(w).match(/Unknown decoration:\s*([^\s<:(!]+)/i);
@@ -883,6 +926,7 @@ export function parseDeskHeaders(source) {
       ? instrumentFromProgram(midiProgram)
       : fromInst;
 
+  const tempoChanges = parseTempoChanges(cleanAbc);
   const { abc: withDecos, used: decorationsUsed } =
     expandDeskDecorations(cleanAbc);
   cleanAbc = withDecos;
@@ -918,6 +962,7 @@ export function parseDeskHeaders(source) {
       drum1Raw,
       drum2Raw,
       decorationsUsed,
+      tempoChanges,
       timelinePassives,
       // Keep the short alias useful to consumers that do not need the
       // timeline-specific name, while retaining the descriptive field.
@@ -925,6 +970,32 @@ export function parseDeskHeaders(source) {
     },
     warnings,
   };
+}
+
+/**
+ * Read tempo gestures without removing them from the ABC source. Keeping the
+ * marker text preserves abcjs source positions for event-to-source mapping.
+ *
+ * Paired form:
+ *   !accelerando(! ... !accelerando)!
+ * A single marker applies a short default ramp.
+ */
+export function parseTempoChanges(source) {
+  return [...String(source ?? "").matchAll(TEMPO_MARKER_RE)].map((match) => ({
+    type: normalizeTempoType(match[1]),
+    mode: match[2] === "(!" ? "start" : match[2] === ")!" ? "end" : "point",
+    at: match.index ?? 0,
+    raw: match[0],
+  }));
+}
+
+function normalizeTempoType(value) {
+  const type = String(value ?? "").toLowerCase();
+  return type === "accel" ? "accelerando" : type === "rall" || type === "rit"
+    ? "ritardando"
+    : type === "rallentando"
+      ? "ritardando"
+      : type;
 }
 
 /**
@@ -2279,6 +2350,7 @@ export function deskAudioParams(meta, settings = {}) {
       polyphonyScale,
       equalizer,
       timelinePassives: meta.timelinePassives ?? meta.passives ?? [],
+      tempoChanges: meta.tempoChanges ?? [],
       adaptiveStrings: false,
       violinVibrato: forceInstrument === "violin",
     },
@@ -2295,10 +2367,15 @@ export function deskAudioParams(meta, settings = {}) {
         players: ctx?.players ?? meta.players,
         timelinePassives:
           ctx?.timelinePassives ?? meta.timelinePassives ?? meta.passives ?? [],
+        tempoChanges: ctx?.tempoChanges ?? meta.tempoChanges ?? [],
         adaptiveStrings: ctx?.adaptiveStrings ?? false,
         expressionExpansion: ctx?.expressionExpansion ?? false,
         experimentalPerformance: ctx?.experimentalPerformance ?? false,
       });
+      applyTempoGestures(
+        balanced,
+        ctx?.tempoChanges ?? meta.tempoChanges ?? [],
+      );
       return limitPolyphony(
         balanced,
         ctx?.polyphonyScale ?? polyphonyScale,
@@ -2325,6 +2402,121 @@ export function deskAudioParams(meta, settings = {}) {
 
   if (options.swing === 0) delete options.swing;
   return options;
+}
+
+function applyTempoGestures(tracks, changes) {
+  if (!Array.isArray(changes) || !changes.length) return tracks;
+  const notes = tracks
+    .flat()
+    .filter(
+      (event) =>
+        event?.cmd === "note" &&
+        Number.isFinite(Number(event.start)) &&
+        Number.isFinite(Number(event.end)) &&
+        Number.isFinite(Number(event.startChar)),
+    )
+    .sort((a, b) => Number(a.startChar) - Number(b.startChar));
+  if (!notes.length) return tracks;
+
+  const ramps = [];
+  const pending = new Map();
+  for (const change of changes) {
+    const type = change.type === "accelerando" ? "accelerando" : "ritardando";
+    const note = notes.find((event) => event.startChar >= change.at);
+    if (!note) continue;
+    if (change.mode === "end") {
+      const start = pending.get(type);
+      if (start) {
+        ramps.push({
+          type,
+          start: start.time,
+          end: Math.max(start.time + 0.001, Number(note.start)),
+        });
+        pending.delete(type);
+      }
+      continue;
+    }
+    if (change.mode === "start") {
+      pending.set(type, { time: Number(note.start) });
+      continue;
+    }
+    ramps.push({
+      type,
+      start: Number(note.start),
+      end: Number(note.start) + 2,
+    });
+  }
+  for (const [type, start] of pending) {
+    ramps.push({ type, start: start.time, end: start.time + 2 });
+  }
+  if (!ramps.length) return tracks;
+
+  const end = Math.max(...notes.map((note) => Number(note.end)), 0);
+  const boundaries = [...new Set([
+    0,
+    end,
+    ...ramps.flatMap((ramp) => [ramp.start, ramp.end]),
+  ])]
+    .filter((value) => Number.isFinite(value) && value >= 0 && value <= end)
+    .sort((a, b) => a - b);
+  const mapped = new Map([[0, 0]]);
+  let elapsed = 0;
+  for (let index = 0; index < boundaries.length - 1; index++) {
+    const start = boundaries[index];
+    const finish = boundaries[index + 1];
+    const duration = finish - start;
+    if (duration <= 0) continue;
+    elapsed += duration * (
+      tempoDurationFactor(ramps, start) + tempoDurationFactor(ramps, finish)
+    ) / 2;
+    mapped.set(finish, elapsed);
+  }
+
+  const mapTime = (time) => {
+    const value = Math.max(0, Math.min(end, Number(time) || 0));
+    let previous = 0;
+    for (const boundary of boundaries) {
+      if (boundary >= value) break;
+      previous = boundary;
+    }
+    const base = mapped.get(previous) ?? previous;
+    const span = value - previous;
+    return base + span * (
+      tempoDurationFactor(ramps, previous) + tempoDurationFactor(ramps, value)
+    ) / 2;
+  };
+
+  for (const track of tracks) {
+    for (const event of track) {
+      if (
+        event?.cmd !== "note" ||
+        !Number.isFinite(Number(event.start)) ||
+        !Number.isFinite(Number(event.end))
+      ) continue;
+      const start = Number(event.start);
+      const finish = Number(event.end);
+      event.start = mapTime(start);
+      event.end = Math.max(event.start + 0.001, mapTime(finish));
+      event.duration = event.end - event.start;
+    }
+  }
+  return tracks;
+}
+
+function tempoDurationFactor(ramps, time) {
+  let factor = 1;
+  for (const ramp of ramps) {
+    if (time < ramp.start || time > ramp.end) continue;
+    const progress = Math.max(
+      0,
+      Math.min(1, (time - ramp.start) / Math.max(0.001, ramp.end - ramp.start)),
+    );
+    const speed = ramp.type === "accelerando"
+      ? 1 + progress * 0.35
+      : 1 - progress * 0.3;
+    factor *= 1 / Math.max(0.35, speed);
+  }
+  return factor;
 }
 
 /**

@@ -16,6 +16,13 @@ import {
   normalizeInlineOverlayMeasures,
   parseParts,
 } from "./deskParts.js";
+import { expandMotifs, formatMotifParameters } from "./deskMotifs.js";
+import {
+  addChordTone,
+  appendGraphicalNote,
+  moveNoteToOverlay,
+  sourceCanBeEdited,
+} from "./deskGraphical.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
 import { createDeskPlayer, createTestingPlayer } from "./deskPlayer.js";
@@ -247,6 +254,7 @@ const oldFramework = frameworkHash === "#oldframework";
 const testingFramework = frameworkHash === "#testingframework";
 const violinPreset = frameworkHash === "#violin";
 const museScoreFramework = frameworkHash === "#musescore";
+const graphicalEditorFramework = frameworkHash === "#graphicaleditor";
 const experimentalFramework = !oldFramework;
 const DEFAULT_ABC =
   shared ||
@@ -255,6 +263,7 @@ const DEFAULT_ABC =
     : SAMPLES.cooleys);
 
 const app = document.querySelector("#app");
+document.body.classList.toggle("graphical-editor", graphicalEditorFramework);
 
 app.innerHTML = `
   <header class="hero">
@@ -341,6 +350,13 @@ app.innerHTML = `
         <h2 class="panel-title">Score</h2>
         <div class="toolbar">
           <button type="button" class="primary" id="render-now">Render</button>
+          <label class="score-view">
+            View
+            <select id="motif-view" title="Choose how motif callbacks appear in the score">
+              <option value="expanded">Expanded music</option>
+              <option value="annotated">Motif callbacks</option>
+            </select>
+          </label>
           <button type="button" id="download-midi" title="Download current tune as MIDI">MIDI</button>
           <button type="button" id="download-wav" title="Download current tune as WAV">WAV</button>
           <button type="button" id="download-pdf" title="Save the rendered score as PDF">PDF</button>
@@ -448,6 +464,7 @@ const downloadWavBtn = document.querySelector("#download-wav");
 const downloadPdfBtn = document.querySelector("#download-pdf");
 const downloadPngBtn = document.querySelector("#download-png");
 const downloadJpegBtn = document.querySelector("#download-jpeg");
+const motifViewSelect = document.querySelector("#motif-view");
 const customizeBtn = document.querySelector("#customize");
 const customizationMenu = document.querySelector("#customization-menu");
 const cursorStyleSelect = document.querySelector("#cursor-style");
@@ -467,6 +484,13 @@ const equalizerPanel = document.querySelector("#equalizer-panel");
 const equalizerEnabled = document.querySelector("#equalizer-enabled");
 const equalizerPreset = document.querySelector("#equalizer-preset");
 const equalizerBands = document.querySelector("#equalizer-bands");
+let motifView = window.localStorage.getItem("abc-desk-motif-view") ?? "expanded";
+motifViewSelect.value = motifView;
+motifViewSelect.addEventListener("change", () => {
+  motifView = motifViewSelect.value;
+  window.localStorage.setItem("abc-desk-motif-view", motifView);
+  if (lastPrepared) renderMotifAnnotations(lastPrepared.motif.annotations);
+});
 
 function replaceEditorValue(value) {
   if (value === editor.value) return false;
@@ -1718,13 +1742,157 @@ function prepareSource(source) {
     partsMeta = partInfo.parts;
   }
 
-  const parsed = parseDeskHeaders(working);
+  const motifs = expandMotifs(working);
+  const parsed = parseDeskHeaders(motifs.source);
   return {
     cleanAbc: parsed.cleanAbc,
     meta: { ...parsed.meta, parts: partsMeta, sourceText: parsed.cleanAbc },
-    warnings: [...extraWarnings, ...parsed.warnings],
+    warnings: [...extraWarnings, ...motifs.warnings, ...parsed.warnings],
     partInfo,
     sourceForLint: source,
+    motif: motifs,
+  };
+}
+
+function renderMotifAnnotations(annotations) {
+  const svg = paper.querySelector("svg");
+  svg?.querySelector(".desk-motif-annotations")?.remove();
+  if (!svg || motifView !== "annotated" || !annotations?.length) return;
+
+  const viewBox = svg.viewBox?.baseVal;
+  const width = viewBox?.width || Number(svg.getAttribute("width")) || 800;
+  const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  group.setAttribute("class", "desk-motif-annotations");
+  group.setAttribute("aria-label", "Motif callback annotations");
+  const maxPerRow = Math.max(1, Math.floor(width / 190));
+  annotations.forEach((annotation, index) => {
+    const row = Math.floor(index / maxPerRow);
+    const column = index % maxPerRow;
+    const x = 12 + column * 190;
+    const y = 22 + row * 28;
+    const label = `${annotation.name} · ${formatMotifParameters(annotation.parameters)}`;
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("x", String(x));
+    rect.setAttribute("y", String(y - 15));
+    rect.setAttribute("width", String(Math.min(180, Math.max(110, label.length * 5.8))));
+    rect.setAttribute("height", "20");
+    rect.setAttribute("rx", "4");
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", String(x + 7));
+    text.setAttribute("y", String(y - 1));
+    text.textContent = label;
+    group.append(rect, text);
+  });
+  svg.insertBefore(group, svg.firstChild);
+}
+
+let graphicalMenu = null;
+
+function closeGraphicalMenu() {
+  graphicalMenu?.remove();
+  graphicalMenu = null;
+}
+
+function showGraphicalMenu(event, note, prepared) {
+  closeGraphicalMenu();
+  const menu = document.createElement("div");
+  menu.className = "graphical-context-menu";
+  menu.style.left = `${Math.min(window.innerWidth - 230, event.clientX)}px`;
+  menu.style.top = `${Math.min(window.innerHeight - 260, event.clientY)}px`;
+  const actions = [
+    ["Add third above", 4],
+    ["Add fifth above", 7],
+    ["Add octave above", 12],
+  ];
+  actions.forEach(([label, semitones]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      const next = addChordTone(
+        editor.value,
+        note.startChar,
+        note.endChar,
+        semitones,
+      );
+      if (!next) {
+        setStatus("This note cannot be converted into a chord safely.", true);
+      } else {
+        replaceEditorValue(next);
+        renderScore();
+      }
+      closeGraphicalMenu();
+    });
+    menu.append(button);
+  });
+  const move = document.createElement("button");
+  move.type = "button";
+  move.textContent = "Move to aligned voice (&)";
+  move.addEventListener("click", () => {
+    const unit = readGraphicalLengthUnit(editor.value);
+    const next = moveNoteToOverlay(
+      editor.value,
+      note.startChar,
+      note.endChar,
+      unit,
+    );
+    if (!next) {
+      setStatus("This note cannot be moved into an overlay safely.", true);
+    } else {
+      replaceEditorValue(next);
+      renderScore();
+    }
+    closeGraphicalMenu();
+  });
+  menu.append(move);
+  document.body.append(menu);
+  graphicalMenu = menu;
+}
+
+function readGraphicalLengthUnit(source) {
+  const match = String(source).match(/^\s*L\s*:\s*(\d+)\s*\/\s*(\d+)/im);
+  return match ? Number(match[1]) / Number(match[2]) : 0.125;
+}
+
+function attachGraphicalInteractions(prepared) {
+  closeGraphicalMenu();
+  if (!graphicalEditorFramework) return;
+  if (!sourceCanBeEdited(editor.value, prepared)) {
+    setStatus(
+      "Graphical editing is limited to plain single-voice ABC; use Source mode for Desk tags, motifs, or parts.",
+      true,
+    );
+    return;
+  }
+  const selectable = lastVisualObj?.getSelectableArray?.() ?? [];
+  selectable.forEach((item) => {
+    const abcElem = item?.absEl?.abcelem;
+    const element = item?.svgEl;
+    if (!element || abcElem?.el_type !== "note") return;
+    element.classList.add("graphical-note");
+    element.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      showGraphicalMenu(event, abcElem, prepared);
+    });
+  });
+  paper.oncontextmenu = (event) => {
+    if (event.target.closest?.(".graphical-note")) return;
+    event.preventDefault();
+    closeGraphicalMenu();
+    const next = appendGraphicalNote(editor.value, "C");
+    if (next) {
+      replaceEditorValue(next);
+      renderScore();
+      setStatus("Inserted a C at the end of the current music line.");
+    }
+  };
+  paper.ondblclick = (event) => {
+    if (event.target.closest?.(".graphical-note")) return;
+    const next = appendGraphicalNote(editor.value, "C");
+    if (!next) return;
+    replaceEditorValue(next);
+    renderScore();
+    setStatus("Inserted a C at the end of the current music line.");
   };
 }
 
@@ -1769,6 +1937,8 @@ function renderScore() {
 
     lastVisualObj = visualObjs[0] ?? null;
     renderGlissandoMarks(lastVisualObj, prepared.cleanAbc);
+    renderMotifAnnotations(prepared.motif.annotations);
+    attachGraphicalInteractions(prepared);
     const warnings = filterDecorationWarnings([
       ...prepared.warnings,
       ...(lastVisualObj?.warnings ?? []),
