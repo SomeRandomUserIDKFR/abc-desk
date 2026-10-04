@@ -1871,7 +1871,7 @@ function readGraphicalStaffStep(element) {
     const median = gaps.sort((left, right) => left - right)[Math.floor(gaps.length / 2)];
     // ABC pitch positions advance by staff spaces; compensate for the SVG
     // line-box padding so release positions align with note centers.
-    return median * 0.75;
+    return median * 0.55;
   }
   return 10;
 }
