@@ -33,6 +33,8 @@ import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
 import { createDeskPlayer, createTestingPlayer } from "./deskPlayer.js";
 import songTxt from "../Song.txt?raw";
 
+let graphicalDurationDrag = null;
+
 const SAMPLES = {
   cooleys: `X:1
 T:Cooley's
@@ -1934,6 +1936,22 @@ function attachGraphicalInteractions(prepared) {
     current.element.style.transform = "";
     current.element.dataset.graphicalDragged = current.moved ? "true" : "false";
     if (!current.moved) return;
+    if (current.kind === "duration") {
+      const stepLabel =
+        current.stepMultiplier === 0.5
+          ? "quarter-L"
+          : current.stepMultiplier === 2
+            ? "L"
+            : "half-L";
+      const stepAmount =
+        current.stepMultiplier === 0.5
+          ? current.appliedSteps * 2
+          : current.appliedSteps / 2;
+      setStatus(
+        `Changed note duration by ${stepAmount > 0 ? "+" : ""}${stepAmount} ${stepLabel} step${Math.abs(stepAmount) === 1 ? "" : "s"}.`,
+      );
+      return;
+    }
     if (current.kind === "bar") {
       const target = noteEntries.reduce(
         (best, entry) => {
@@ -1963,27 +1981,6 @@ function attachGraphicalInteractions(prepared) {
       );
       if (!next) {
         setStatus("This barline cannot be moved to that boundary.", true);
-        return;
-      }
-      if (current.kind === "duration") {
-        const deltaSteps = Math.round(
-          (current.releaseX - current.startX) / current.stepPixels,
-        );
-        if (!deltaSteps) return;
-        const next = resizeGraphicalNote(
-          editor.value,
-          current.note.startChar,
-          current.note.endChar,
-          deltaSteps,
-          readGraphicalLengthUnit(editor.value),
-        );
-        if (!next) {
-          setStatus("That duration would be too short.", true);
-          return;
-        }
-        replaceEditorValue(next);
-        renderScore();
-        setStatus(`Changed note duration by ${deltaSteps > 0 ? "+" : ""}${deltaSteps} half-L steps.`);
         return;
       }
       replaceEditorValue(next);
@@ -2017,7 +2014,8 @@ function attachGraphicalInteractions(prepared) {
         null,
       )?.entry;
     const targetLine = (hovered || nearestLineNote)?.staff;
-    const sameStaff = !targetLine || targetLine === current.staff;
+    const sameStaff =
+      current.ledgerMode || !targetLine || targetLine === current.staff;
     const staffSteps = sameStaff
       ? Math.round(
           (current.startY - current.releaseY) / current.staffStep,
@@ -2029,7 +2027,8 @@ function attachGraphicalInteractions(prepared) {
           staffSteps,
         )
       : editor.value.slice(current.note.startChar, current.note.endChar);
-    const horizontalMoved = Math.abs(current.releaseX - current.startX) >= 8;
+    const horizontalMoved =
+      !current.ledgerMode && Math.abs(current.releaseX - current.startX) >= 8;
     if (!horizontalMoved) {
       const next = staffSteps
         ? moveGraphicalNoteByStaffSteps(
@@ -2097,14 +2096,59 @@ function attachGraphicalInteractions(prepared) {
       Math.hypot(event.clientX - activeDrag.startX, activeDrag.deltaY) >= 3;
     if (!activeDrag.moved) return;
     event.preventDefault();
+    if (activeDrag.kind === "duration") {
+      const desiredSteps = Math.round(
+        (event.clientX - activeDrag.startX) / activeDrag.stepPixels,
+      ) * activeDrag.stepMultiplier;
+      const deltaSteps = desiredSteps - activeDrag.appliedSteps;
+      if (deltaSteps) {
+        const stepMultiplier = activeDrag.stepMultiplier;
+        const next = resizeGraphicalNote(
+          editor.value,
+          activeDrag.note.startChar,
+          activeDrag.note.endChar,
+          deltaSteps,
+          readGraphicalLengthUnit(editor.value),
+        );
+        if (next) {
+          graphicalDurationDrag = {
+            noteIndex: activeDrag.noteIndex,
+            startX: activeDrag.startX,
+            startY: activeDrag.startY,
+            appliedSteps: desiredSteps,
+            stepMultiplier: activeDrag.stepMultiplier,
+            releaseX: event.clientX,
+            releaseY: event.clientY,
+          };
+          replaceEditorValue(next);
+          renderScore();
+          setStatus(
+            `Changed note duration by ${
+              (stepMultiplier === 0.5 ? desiredSteps * 2 : desiredSteps / 2) > 0 ? "+" : ""
+            }${stepMultiplier === 0.5 ? desiredSteps * 2 : desiredSteps / 2} ${
+              stepMultiplier === 0.5
+                ? "quarter-L"
+                : stepMultiplier === 2
+                  ? "L"
+                  : "half-L"
+            } step${
+              Math.abs(stepMultiplier === 0.5 ? desiredSteps * 2 : desiredSteps / 2) === 1
+                ? ""
+                : "s"
+            }.`,
+          );
+        }
+      }
+      return;
+    }
     activeDrag.element.style.transform = `translate(${event.clientX - activeDrag.startX}px, ${activeDrag.deltaY}px)`;
   };
   const stopDrag = () => finishDrag();
-  window.addEventListener("mousemove", moveDrag);
-  window.addEventListener("mouseup", stopDrag);
+  document.addEventListener("mousemove", moveDrag);
+  document.addEventListener("mouseup", stopDrag);
   paper.__graphicalDragCleanup = () => {
-    window.removeEventListener("mousemove", moveDrag);
-    window.removeEventListener("mouseup", stopDrag);
+    document.removeEventListener("mousemove", moveDrag);
+    document.removeEventListener("mouseup", stopDrag);
     activeDrag = null;
   };
   selectable.forEach((item) => {
@@ -2147,23 +2191,30 @@ function attachGraphicalInteractions(prepared) {
     handle.setAttribute("y1", String(handleY));
     handle.setAttribute("y2", String(handleY));
     handle.setAttribute("data-duration-handle", "true");
+    handle.dataset.graphicalNoteIndex = element.getAttribute("data-index") || "";
     handle.setAttribute("pointer-events", "all");
-    handle.addEventListener("mousedown", (event) => {
+    handle.onmousedown = (event) => {
       event.preventDefault();
       event.stopPropagation();
       activeDrag = {
         kind: "duration",
         element: handle,
         note: abcElem,
+        noteIndex: handle.dataset.graphicalNoteIndex,
         startX: event.clientX,
+        startY: event.clientY,
         releaseX: event.clientX,
+        releaseY: event.clientY,
         stepPixels: 12,
+        stepMultiplier: event.ctrlKey ? 0.5 : event.shiftKey ? 2 : 1,
+        appliedSteps: 0,
         moved: false,
       };
       handle.classList.add("graphical-note-dragging");
-    });
+    };
     element.append(handle);
     element.addEventListener("mousedown", (event) => {
+      if (event.target.closest?.("[data-duration-handle]")) return;
       if (event.button !== 0 || abcElem.startChar == null || abcElem.endChar == null) return;
       event.preventDefault();
       event.stopPropagation();
@@ -2176,6 +2227,7 @@ function attachGraphicalInteractions(prepared) {
         releaseX: event.clientX,
         staff: element.closest?.(".abcjs-staff-wrapper"),
         staffStep: readGraphicalStaffStep(element),
+        ledgerMode: event.shiftKey,
         deltaY: 0,
         moved: false,
       };
@@ -2193,6 +2245,34 @@ function attachGraphicalInteractions(prepared) {
       showGraphicalMenu(event, abcElem, prepared);
     });
   });
+  if (graphicalDurationDrag) {
+    const pending = graphicalDurationDrag;
+    const handle = paper.querySelector(
+      `[data-duration-handle][data-graphical-note-index="${pending.noteIndex}"]`,
+    );
+    const noteElement = handle?.closest(".abcjs-note");
+    const noteEntry = noteEntries.find(
+      (entry) => entry.element === noteElement,
+    );
+    if (handle && noteEntry) {
+      activeDrag = {
+        kind: "duration",
+        element: handle,
+        note: noteEntry.note,
+        noteIndex: pending.noteIndex,
+        startX: pending.startX,
+        startY: pending.startY,
+        releaseX: pending.releaseX,
+        releaseY: pending.releaseY,
+        stepPixels: 12,
+        stepMultiplier: pending.stepMultiplier,
+        appliedSteps: pending.appliedSteps,
+        moved: true,
+      };
+      handle.classList.add("graphical-note-dragging");
+    }
+    graphicalDurationDrag = null;
+  }
   paper.oncontextmenu = (event) => {
     if (event.target.closest?.(".graphical-note")) return;
     event.preventDefault();
