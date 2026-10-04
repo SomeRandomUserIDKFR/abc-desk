@@ -2147,6 +2147,7 @@ function attachGraphicalInteractions(prepared) {
     handle.setAttribute("y1", String(handleY));
     handle.setAttribute("y2", String(handleY));
     handle.setAttribute("data-duration-handle", "true");
+    handle.setAttribute("pointer-events", "all");
     handle.addEventListener("mousedown", (event) => {
       event.preventDefault();
       event.stopPropagation();

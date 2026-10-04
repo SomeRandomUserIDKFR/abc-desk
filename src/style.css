@@ -288,7 +288,7 @@ button.primary:hover {
   vector-effect: non-scaling-stroke;
   opacity: 0;
   cursor: ew-resize;
-  pointer-events: stroke;
+  pointer-events: all;
 }
 
 .graphical-editor .graphical-note:hover .graphical-duration-handle,
