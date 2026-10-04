@@ -1857,6 +1857,8 @@ function readGraphicalLengthUnit(source) {
 
 function attachGraphicalInteractions(prepared) {
   closeGraphicalMenu();
+  paper.__graphicalDragCleanup?.();
+  paper.__graphicalDragCleanup = null;
   if (!graphicalEditorFramework) return;
   if (!sourceCanBeEdited(editor.value, prepared)) {
     setStatus(
@@ -1866,6 +1868,47 @@ function attachGraphicalInteractions(prepared) {
     return;
   }
   const selectable = lastVisualObj?.getSelectableArray?.() ?? [];
+  let activeDrag = null;
+  const finishDrag = () => {
+    if (!activeDrag) return;
+    const current = activeDrag;
+    activeDrag = null;
+    current.element.classList.remove("graphical-note-dragging");
+    current.element.style.transform = "";
+    current.element.dataset.graphicalDragged = current.moved ? "true" : "false";
+    if (!current.moved) return;
+    const semitones = Math.round(-current.deltaY / 6);
+    if (!semitones) return;
+    const next = transposeGraphicalNote(
+      editor.value,
+      current.note.startChar,
+      current.note.endChar,
+      semitones,
+    );
+    if (!next) {
+      setStatus("This note cannot be transposed safely.", true);
+      return;
+    }
+    replaceEditorValue(next);
+    renderScore();
+    setStatus(`Moved note ${semitones > 0 ? "up" : "down"} ${Math.abs(semitones)} semitone${Math.abs(semitones) === 1 ? "" : "s"}.`);
+  };
+  const moveDrag = (event) => {
+    if (!activeDrag) return;
+    activeDrag.deltaY = event.clientY - activeDrag.startY;
+    activeDrag.moved = Math.abs(activeDrag.deltaY) >= 3;
+    if (!activeDrag.moved) return;
+    event.preventDefault();
+    activeDrag.element.style.transform = `translateY(${activeDrag.deltaY}px)`;
+  };
+  const stopDrag = () => finishDrag();
+  window.addEventListener("mousemove", moveDrag);
+  window.addEventListener("mouseup", stopDrag);
+  paper.__graphicalDragCleanup = () => {
+    window.removeEventListener("mousemove", moveDrag);
+    window.removeEventListener("mouseup", stopDrag);
+    activeDrag = null;
+  };
   selectable.forEach((item) => {
     const abcElem = item?.absEl?.abcelem;
     const element = item?.svgEl;
@@ -1873,51 +1916,26 @@ function attachGraphicalInteractions(prepared) {
     element.classList.add("graphical-note");
     element.setAttribute("tabindex", "0");
     element.setAttribute("draggable", "false");
-    let drag = null;
-    element.addEventListener("pointerdown", (event) => {
+    element.addEventListener("mousedown", (event) => {
       if (event.button !== 0 || abcElem.startChar == null || abcElem.endChar == null) return;
       event.preventDefault();
       event.stopPropagation();
-      element.setPointerCapture?.(event.pointerId);
-      drag = {
-        pointerId: event.pointerId,
+      activeDrag = {
+        element,
+        note: abcElem,
         startY: event.clientY,
         deltaY: 0,
-        originalTransform: element.getAttribute("transform") || "",
+        moved: false,
       };
       element.classList.add("graphical-note-dragging");
     });
-    element.addEventListener("pointermove", (event) => {
-      if (!drag || event.pointerId !== drag.pointerId) return;
-      drag.deltaY = event.clientY - drag.startY;
-      const visualShift = drag.deltaY;
-      element.style.transform = `translateY(${visualShift}px)`;
-    });
-    const finishDrag = (event) => {
-      if (!drag || event.pointerId !== drag.pointerId) return;
-      const current = drag;
-      drag = null;
-      element.releasePointerCapture?.(event.pointerId);
-      element.classList.remove("graphical-note-dragging");
-      element.style.transform = "";
-      const semitones = Math.round(-current.deltaY / 6);
-      if (!semitones) return;
-      const next = transposeGraphicalNote(
-        editor.value,
-        abcElem.startChar,
-        abcElem.endChar,
-        semitones,
-      );
-      if (!next) {
-        setStatus("This note cannot be transposed safely.", true);
-        return;
+    element.addEventListener("click", (event) => {
+      if (element.dataset.graphicalDragged === "true") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        delete element.dataset.graphicalDragged;
       }
-      replaceEditorValue(next);
-      renderScore();
-      setStatus(`Moved note ${semitones > 0 ? "up" : "down"} ${Math.abs(semitones)} semitone${Math.abs(semitones) === 1 ? "" : "s"}.`);
-    };
-    element.addEventListener("pointerup", finishDrag);
-    element.addEventListener("pointercancel", finishDrag);
+    }, true);
     element.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       showGraphicalMenu(event, abcElem, prepared);
