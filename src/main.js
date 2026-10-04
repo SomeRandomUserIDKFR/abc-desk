@@ -22,6 +22,8 @@ import {
   appendGraphicalNote,
   moveNoteToOverlay,
   moveGraphicalNoteByStaffSteps,
+  moveGraphicalTokenByStaffSteps,
+  reorderGraphicalNote,
   sourceCanBeEdited,
 } from "./deskGraphical.js";
 import { lintComposition } from "./deskLint.js";
@@ -1890,6 +1892,17 @@ function attachGraphicalInteractions(prepared) {
   }
   const selectable = lastVisualObj?.getSelectableArray?.() ?? [];
   let activeDrag = null;
+  const noteEntries = selectable
+    .map((item) => ({
+      note: item?.absEl?.abcelem,
+      element: item?.svgEl,
+    }))
+    .filter((entry) => entry.element && entry.note?.el_type === "note")
+    .map((entry) => ({
+      ...entry,
+      box: entry.element.getBoundingClientRect(),
+    }))
+    .sort((left, right) => left.box.left - right.box.left);
   const finishDrag = () => {
     if (!activeDrag) return;
     const current = activeDrag;
@@ -1901,29 +1914,79 @@ function attachGraphicalInteractions(prepared) {
     const staffSteps = Math.round(
       (current.startY - current.releaseY) / current.staffStep,
     );
-    if (!staffSteps) return;
-    const next = moveGraphicalNoteByStaffSteps(
+    const draggedToken = staffSteps
+      ? moveGraphicalTokenByStaffSteps(
+          editor.value.slice(current.note.startChar, current.note.endChar),
+          staffSteps,
+        )
+      : editor.value.slice(current.note.startChar, current.note.endChar);
+    const horizontalMoved = Math.abs(current.releaseX - current.startX) >= 8;
+    if (!horizontalMoved) {
+      const next = staffSteps
+        ? moveGraphicalNoteByStaffSteps(
+            editor.value,
+            current.note.startChar,
+            current.note.endChar,
+            staffSteps,
+          )
+        : null;
+      if (!next) return;
+      replaceEditorValue(next);
+      renderScore();
+      setStatus(`Moved note ${staffSteps > 0 ? "up" : "down"} ${Math.abs(staffSteps)} staff step${Math.abs(staffSteps) === 1 ? "" : "s"}.`);
+      return;
+    }
+    const targets = noteEntries.filter((entry) => entry.note !== current.note);
+    const hovered = targets.find(
+      (entry) =>
+        current.releaseX >= entry.box.left &&
+        current.releaseX <= entry.box.right &&
+        current.releaseY >= entry.box.top - 8 &&
+        current.releaseY <= entry.box.bottom + 8,
+    );
+    const nearest = targets.reduce(
+      (best, entry) =>
+        !best || Math.abs(entry.box.left - current.releaseX) < Math.abs(best.box.left - current.releaseX)
+          ? entry
+          : best,
+      null,
+    );
+    const target = hovered || nearest;
+    if (!draggedToken || !target) return;
+    const placement = hovered
+      ? "swap"
+      : current.releaseX < target.box.left
+        ? "before"
+        : "after";
+    const next = reorderGraphicalNote(
       editor.value,
       current.note.startChar,
       current.note.endChar,
-      staffSteps,
+      target.note.startChar,
+      target.note.endChar,
+      placement,
+      draggedToken,
     );
     if (!next) {
-      setStatus("This note cannot be transposed safely.", true);
+      setStatus("This note cannot be moved there safely.", true);
       return;
     }
     replaceEditorValue(next);
     renderScore();
-    setStatus(`Moved note ${staffSteps > 0 ? "up" : "down"} ${Math.abs(staffSteps)} staff step${Math.abs(staffSteps) === 1 ? "" : "s"}.`);
+    const pitchBit = staffSteps
+      ? ` and moved ${staffSteps > 0 ? "up" : "down"} ${Math.abs(staffSteps)} staff step${Math.abs(staffSteps) === 1 ? "" : "s"}`
+      : "";
+    setStatus(`${hovered ? "Swapped" : "Moved"} note${pitchBit}.`);
   };
   const moveDrag = (event) => {
     if (!activeDrag) return;
     activeDrag.releaseY = event.clientY;
+    activeDrag.releaseX = event.clientX;
     activeDrag.deltaY = activeDrag.releaseY - activeDrag.startY;
     activeDrag.moved = Math.abs(activeDrag.deltaY) >= 3;
     if (!activeDrag.moved) return;
     event.preventDefault();
-    activeDrag.element.style.transform = `translateY(${activeDrag.deltaY}px)`;
+    activeDrag.element.style.transform = `translate(${event.clientX - activeDrag.startX}px, ${activeDrag.deltaY}px)`;
   };
   const stopDrag = () => finishDrag();
   window.addEventListener("mousemove", moveDrag);
@@ -1950,6 +2013,8 @@ function attachGraphicalInteractions(prepared) {
         note: abcElem,
         startY: event.clientY,
         releaseY: event.clientY,
+        startX: event.clientX,
+        releaseX: event.clientX,
         staffStep: readGraphicalStaffStep(element),
         deltaY: 0,
         moved: false,

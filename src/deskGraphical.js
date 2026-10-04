@@ -80,6 +80,11 @@ export function transposeGraphicalNote(source, start, end, semitones) {
 
 export function moveGraphicalNoteByStaffSteps(source, start, end, steps) {
   const token = source.slice(start, end);
+  const shifted = moveGraphicalTokenByStaffSteps(token, steps);
+  return shifted ? replaceRange(source, start, end, shifted) : null;
+}
+
+export function moveGraphicalTokenByStaffSteps(token, steps) {
   const match = token.match(NOTE_TOKEN_RE);
   if (!match || token.startsWith("[")) return null;
   const noteMatch = match[1].match(/^[_^=]*([A-Ga-g])([,']*)$/);
@@ -100,7 +105,39 @@ export function moveGraphicalNoteByStaffSteps(source, start, end, steps) {
     targetOctave >= 1
       ? `${targetLetter.toLowerCase()}${"'".repeat(targetOctave - 1)}`
       : `${targetLetter}${",".repeat(-targetOctave)}`;
-  return replaceRange(source, start, end, `${targetToken}${suffix}`);
+  return `${targetToken}${suffix}`;
+}
+
+export function reorderGraphicalNote(
+  source,
+  start,
+  end,
+  targetStart,
+  targetEnd,
+  placement,
+  draggedToken = source.slice(start, end),
+) {
+  if (
+    start === targetStart &&
+    end === targetEnd ||
+    targetStart == null ||
+    targetEnd == null
+  ) {
+    return null;
+  }
+  const targetToken = source.slice(targetStart, targetEnd);
+  if (placement === "swap") {
+    if (start < targetStart) {
+      return `${source.slice(0, start)}${targetToken}${source.slice(end, targetStart)}${draggedToken}${source.slice(targetEnd)}`;
+    }
+    return `${source.slice(0, targetStart)}${draggedToken}${source.slice(targetEnd, start)}${targetToken}${source.slice(end)}`;
+  }
+  const without = `${source.slice(0, start)}${source.slice(end)}`;
+  const insertAt =
+    placement === "before" ? targetStart : targetEnd;
+  const adjusted = start < insertAt ? insertAt - (end - start) : insertAt;
+  const separator = " ";
+  return `${without.slice(0, adjusted)}${placement === "before" ? "" : separator}${draggedToken}${separator}${without.slice(adjusted)}`;
 }
 
 function replaceRange(source, start, end, replacement) {
