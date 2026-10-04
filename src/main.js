@@ -530,7 +530,8 @@ cursorStyleSelect.addEventListener("change", () => {
 const timelineTime = document.querySelector("#timeline-time");
 const supportsAudio = abcjs.synth.supportsAudio();
 
-editor.value = DEFAULT_ABC;
+editor.value =
+  graphicalEditorFramework && !shared ? toStrictAbc(DEFAULT_ABC) : DEFAULT_ABC;
 if (shared) {
   sampleSelect.value = "";
 }
@@ -1913,6 +1914,7 @@ function attachGraphicalInteractions(prepared) {
     const abcElem = item?.absEl?.abcelem;
     const element = item?.svgEl;
     if (!element || abcElem?.el_type !== "note") return;
+    element.querySelectorAll?.("*").forEach((child) => child.classList.add("graphical-note"));
     element.classList.add("graphical-note");
     element.setAttribute("tabindex", "0");
     element.setAttribute("draggable", "false");
