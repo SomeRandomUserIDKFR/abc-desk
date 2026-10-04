@@ -283,8 +283,9 @@ button.primary:hover {
 
 .graphical-editor .graphical-duration-handle {
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: 3;
   stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
   opacity: 0;
   cursor: ew-resize;
   pointer-events: stroke;

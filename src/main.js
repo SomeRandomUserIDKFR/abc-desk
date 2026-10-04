@@ -1880,6 +1880,26 @@ function readGraphicalStaffStep(element) {
   return 10;
 }
 
+function graphicalStemPointsDown(abcElem, element) {
+  const direction =
+    abcElem?.stemDir ||
+    abcElem?.stemDirection ||
+    abcElem?.pitches?.[0]?.stemDir ||
+    "";
+  if (String(direction).toLowerCase() === "down") return true;
+  if (String(direction).toLowerCase() === "up") return false;
+  const noteBox = element.getBBox?.();
+  if (!noteBox) return false;
+  const stem = [...(element.querySelectorAll?.("path,line") ?? [])].find((child) =>
+    /stem|beam/i.test(
+      `${child.getAttribute("class") || ""} ${child.getAttribute("data-name") || ""}`,
+    ),
+  );
+  if (!stem) return false;
+  const stemBox = stem.getBBox?.();
+  return Boolean(stemBox && stemBox.y > noteBox.y + noteBox.height / 2);
+}
+
 function attachGraphicalInteractions(prepared) {
   closeGraphicalMenu();
   paper.__graphicalDragCleanup?.();
@@ -2118,12 +2138,14 @@ function attachGraphicalInteractions(prepared) {
     element.setAttribute("tabindex", "0");
     element.setAttribute("draggable", "false");
     const box = element.getBBox?.() || { x: 0, y: 0, width: 12, height: 8 };
+    const handleAbove = graphicalStemPointsDown(abcElem, element);
     const handle = document.createElementNS("http://www.w3.org/2000/svg", "line");
     handle.classList.add("graphical-duration-handle");
-    handle.setAttribute("x1", String(box.x + box.width / 2 - 8));
-    handle.setAttribute("x2", String(box.x + box.width / 2 + 8));
-    handle.setAttribute("y1", String(box.y + box.height + 12));
-    handle.setAttribute("y2", String(box.y + box.height + 12));
+    handle.setAttribute("x1", String(box.x + box.width / 2 - 12));
+    handle.setAttribute("x2", String(box.x + box.width / 2 + 12));
+    const handleY = handleAbove ? box.y - 12 : box.y + box.height + 12;
+    handle.setAttribute("y1", String(handleY));
+    handle.setAttribute("y2", String(handleY));
     handle.setAttribute("data-duration-handle", "true");
     handle.addEventListener("mousedown", (event) => {
       event.preventDefault();
