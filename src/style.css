@@ -275,6 +275,12 @@ button.primary:hover {
   filter: drop-shadow(0 0 5px rgba(232, 196, 104, 1));
 }
 
+.graphical-editor .graphical-barline {
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
 .graphical-context-menu {
   position: fixed;
   z-index: 20;

@@ -23,6 +23,7 @@ import {
   moveNoteToOverlay,
   moveGraphicalNoteByStaffSteps,
   moveGraphicalTokenByStaffSteps,
+  moveGraphicalBarline,
   reorderGraphicalNote,
   sourceCanBeEdited,
 } from "./deskGraphical.js";
@@ -1912,6 +1913,42 @@ function attachGraphicalInteractions(prepared) {
     current.element.style.transform = "";
     current.element.dataset.graphicalDragged = current.moved ? "true" : "false";
     if (!current.moved) return;
+    if (current.kind === "bar") {
+      const target = noteEntries.reduce(
+        (best, entry) => {
+          const centerX = (entry.box.left + entry.box.right) / 2;
+          const centerY = (entry.box.top + entry.box.bottom) / 2;
+          const distance = Math.hypot(
+            current.releaseX - centerX,
+            current.releaseY - centerY,
+          );
+          return !best || distance < best.distance
+            ? { entry, distance }
+            : best;
+        },
+        null,
+      )?.entry;
+      if (!target) return;
+      const targetCenter = (target.box.left + target.box.right) / 2;
+      const insertAt =
+        current.releaseX < targetCenter
+          ? target.note.startChar
+          : target.note.endChar;
+      const next = moveGraphicalBarline(
+        editor.value,
+        current.bar.startChar,
+        current.bar.endChar,
+        insertAt,
+      );
+      if (!next) {
+        setStatus("This barline cannot be moved to that boundary.", true);
+        return;
+      }
+      replaceEditorValue(next);
+      renderScore();
+      setStatus("Moved barline to a snapped note boundary.");
+      return;
+    }
     const hovered = noteEntries
       .filter((entry) => entry.note !== current.note)
       .find(
@@ -2014,7 +2051,8 @@ function attachGraphicalInteractions(prepared) {
     activeDrag.releaseY = event.clientY;
     activeDrag.releaseX = event.clientX;
     activeDrag.deltaY = activeDrag.releaseY - activeDrag.startY;
-    activeDrag.moved = Math.abs(activeDrag.deltaY) >= 3;
+    activeDrag.moved =
+      Math.hypot(event.clientX - activeDrag.startX, activeDrag.deltaY) >= 3;
     if (!activeDrag.moved) return;
     event.preventDefault();
     activeDrag.element.style.transform = `translate(${event.clientX - activeDrag.startX}px, ${activeDrag.deltaY}px)`;
@@ -2030,7 +2068,29 @@ function attachGraphicalInteractions(prepared) {
   selectable.forEach((item) => {
     const abcElem = item?.absEl?.abcelem;
     const element = item?.svgEl;
-    if (!element || abcElem?.el_type !== "note") return;
+    if (!element || !["note", "bar"].includes(abcElem?.el_type)) return;
+    if (abcElem.el_type === "bar") {
+      element.classList.add("graphical-barline");
+      element.setAttribute("draggable", "false");
+      element.addEventListener("mousedown", (event) => {
+        if (event.button !== 0 || abcElem.startChar == null || abcElem.endChar == null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        activeDrag = {
+          kind: "bar",
+          element,
+          bar: abcElem,
+          startY: event.clientY,
+          releaseY: event.clientY,
+          startX: event.clientX,
+          releaseX: event.clientX,
+          deltaY: 0,
+          moved: false,
+        };
+        element.classList.add("graphical-note-dragging");
+      });
+      return;
+    }
     element.querySelectorAll?.("*").forEach((child) => child.classList.add("graphical-note"));
     element.classList.add("graphical-note");
     element.setAttribute("tabindex", "0");

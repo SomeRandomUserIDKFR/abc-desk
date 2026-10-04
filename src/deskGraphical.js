@@ -140,6 +140,16 @@ export function reorderGraphicalNote(
   return `${without.slice(0, adjusted)}${placement === "before" ? "" : separator}${draggedToken}${separator}${without.slice(adjusted)}`;
 }
 
+export function moveGraphicalBarline(source, start, end, insertAt) {
+  const token = source.slice(start, end);
+  if (!/^(?:\|:|:\||::|\|{1,2})$/.test(token) || insertAt == null) {
+    return null;
+  }
+  const without = `${source.slice(0, start)}${source.slice(end)}`;
+  const adjusted = start < insertAt ? insertAt - (end - start) : insertAt;
+  return `${without.slice(0, adjusted)}${token}${without.slice(adjusted)}`;
+}
+
 function replaceRange(source, start, end, replacement) {
   return `${source.slice(0, start)}${replacement}${source.slice(end)}`;
 }
