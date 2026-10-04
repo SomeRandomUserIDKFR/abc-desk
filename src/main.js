@@ -1878,7 +1878,9 @@ function attachGraphicalInteractions(prepared) {
     current.element.style.transform = "";
     current.element.dataset.graphicalDragged = current.moved ? "true" : "false";
     if (!current.moved) return;
-    const semitones = Math.round(-current.deltaY / 6);
+    const semitones = Math.round(
+      (current.startY - current.releaseY) / current.staffStep,
+    );
     if (!semitones) return;
     const next = transposeGraphicalNote(
       editor.value,
@@ -1896,7 +1898,8 @@ function attachGraphicalInteractions(prepared) {
   };
   const moveDrag = (event) => {
     if (!activeDrag) return;
-    activeDrag.deltaY = event.clientY - activeDrag.startY;
+    activeDrag.releaseY = event.clientY;
+    activeDrag.deltaY = activeDrag.releaseY - activeDrag.startY;
     activeDrag.moved = Math.abs(activeDrag.deltaY) >= 3;
     if (!activeDrag.moved) return;
     event.preventDefault();
@@ -1926,6 +1929,8 @@ function attachGraphicalInteractions(prepared) {
         element,
         note: abcElem,
         startY: event.clientY,
+        releaseY: event.clientY,
+        staffStep: Math.max(4, (element.getBBox?.().height || 8) * 0.75),
         deltaY: 0,
         moved: false,
       };
