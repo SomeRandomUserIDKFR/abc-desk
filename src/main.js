@@ -1901,6 +1901,7 @@ function attachGraphicalInteractions(prepared) {
     .map((entry) => ({
       ...entry,
       box: entry.element.getBoundingClientRect(),
+      staff: entry.element.closest?.(".abcjs-staff-wrapper"),
     }))
     .sort((left, right) => left.box.left - right.box.left);
   const finishDrag = () => {
@@ -1911,9 +1912,38 @@ function attachGraphicalInteractions(prepared) {
     current.element.style.transform = "";
     current.element.dataset.graphicalDragged = current.moved ? "true" : "false";
     if (!current.moved) return;
-    const staffSteps = Math.round(
-      (current.startY - current.releaseY) / current.staffStep,
-    );
+    const hovered = noteEntries
+      .filter((entry) => entry.note !== current.note)
+      .find(
+        (entry) =>
+          current.releaseX >= entry.box.left &&
+          current.releaseX <= entry.box.right &&
+          current.releaseY >= entry.box.top - 8 &&
+          current.releaseY <= entry.box.bottom + 8,
+      );
+    const nearestLineNote = noteEntries
+      .filter((entry) => entry.note !== current.note)
+      .reduce(
+        (best, entry) => {
+          const centerX = (entry.box.left + entry.box.right) / 2;
+          const centerY = (entry.box.top + entry.box.bottom) / 2;
+          const distance = Math.hypot(
+            current.releaseX - centerX,
+            current.releaseY - centerY,
+          );
+          return !best || distance < best.distance
+            ? { entry, distance }
+            : best;
+        },
+        null,
+      )?.entry;
+    const targetLine = (hovered || nearestLineNote)?.staff;
+    const sameStaff = !targetLine || targetLine === current.staff;
+    const staffSteps = sameStaff
+      ? Math.round(
+          (current.startY - current.releaseY) / current.staffStep,
+        )
+      : 0;
     const draggedToken = staffSteps
       ? moveGraphicalTokenByStaffSteps(
           editor.value.slice(current.note.startChar, current.note.endChar),
@@ -1937,16 +1967,17 @@ function attachGraphicalInteractions(prepared) {
       return;
     }
     const targets = noteEntries.filter((entry) => entry.note !== current.note);
-    const hovered = targets.find(
-      (entry) =>
-        current.releaseX >= entry.box.left &&
-        current.releaseX <= entry.box.right &&
-        current.releaseY >= entry.box.top - 8 &&
-        current.releaseY <= entry.box.bottom + 8,
-    );
     const nearest = targets.reduce(
       (best, entry) =>
-        !best || Math.abs(entry.box.left - current.releaseX) < Math.abs(best.box.left - current.releaseX)
+        !best ||
+        Math.hypot(
+          (entry.box.left + entry.box.right) / 2 - current.releaseX,
+          (entry.box.top + entry.box.bottom) / 2 - current.releaseY,
+        ) <
+          Math.hypot(
+            (best.box.left + best.box.right) / 2 - current.releaseX,
+            (best.box.top + best.box.bottom) / 2 - current.releaseY,
+          )
           ? entry
           : best,
       null,
@@ -2015,6 +2046,7 @@ function attachGraphicalInteractions(prepared) {
         releaseY: event.clientY,
         startX: event.clientX,
         releaseX: event.clientX,
+        staff: element.closest?.(".abcjs-staff-wrapper"),
         staffStep: readGraphicalStaffStep(element),
         deltaY: 0,
         moved: false,
