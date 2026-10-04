@@ -261,11 +261,18 @@ button.primary:hover {
 }
 
 .graphical-editor .graphical-note {
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
 .graphical-editor .graphical-note:hover {
   filter: drop-shadow(0 0 3px rgba(232, 196, 104, 0.9));
+}
+
+.graphical-editor .graphical-note-dragging {
+  cursor: grabbing;
+  filter: drop-shadow(0 0 5px rgba(232, 196, 104, 1));
 }
 
 .graphical-context-menu {

@@ -22,6 +22,7 @@ import {
   appendGraphicalNote,
   moveNoteToOverlay,
   sourceCanBeEdited,
+  transposeGraphicalNote,
 } from "./deskGraphical.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
@@ -1870,6 +1871,53 @@ function attachGraphicalInteractions(prepared) {
     const element = item?.svgEl;
     if (!element || abcElem?.el_type !== "note") return;
     element.classList.add("graphical-note");
+    element.setAttribute("tabindex", "0");
+    element.setAttribute("draggable", "false");
+    let drag = null;
+    element.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || abcElem.startChar == null || abcElem.endChar == null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      element.setPointerCapture?.(event.pointerId);
+      drag = {
+        pointerId: event.pointerId,
+        startY: event.clientY,
+        deltaY: 0,
+        originalTransform: element.getAttribute("transform") || "",
+      };
+      element.classList.add("graphical-note-dragging");
+    });
+    element.addEventListener("pointermove", (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      drag.deltaY = event.clientY - drag.startY;
+      const visualShift = drag.deltaY;
+      element.style.transform = `translateY(${visualShift}px)`;
+    });
+    const finishDrag = (event) => {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      const current = drag;
+      drag = null;
+      element.releasePointerCapture?.(event.pointerId);
+      element.classList.remove("graphical-note-dragging");
+      element.style.transform = "";
+      const semitones = Math.round(-current.deltaY / 6);
+      if (!semitones) return;
+      const next = transposeGraphicalNote(
+        editor.value,
+        abcElem.startChar,
+        abcElem.endChar,
+        semitones,
+      );
+      if (!next) {
+        setStatus("This note cannot be transposed safely.", true);
+        return;
+      }
+      replaceEditorValue(next);
+      renderScore();
+      setStatus(`Moved note ${semitones > 0 ? "up" : "down"} ${Math.abs(semitones)} semitone${Math.abs(semitones) === 1 ? "" : "s"}.`);
+    };
+    element.addEventListener("pointerup", finishDrag);
+    element.addEventListener("pointercancel", finishDrag);
     element.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       showGraphicalMenu(event, abcElem, prepared);

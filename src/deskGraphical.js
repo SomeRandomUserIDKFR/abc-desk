@@ -71,6 +71,13 @@ export function appendGraphicalNote(source, note = "C") {
   return lines.join("\n");
 }
 
+export function transposeGraphicalNote(source, start, end, semitones) {
+  const token = source.slice(start, end);
+  if (!NOTE_TOKEN_RE.test(token) || token.startsWith("[")) return null;
+  const shifted = transposeAbcToken(token, semitones);
+  return shifted === token ? null : replaceRange(source, start, end, shifted);
+}
+
 function replaceRange(source, start, end, replacement) {
   return `${source.slice(0, start)}${replacement}${source.slice(end)}`;
 }
