@@ -275,6 +275,12 @@ button.primary:hover {
   filter: drop-shadow(0 0 5px rgba(232, 196, 104, 1));
 }
 
+.graphical-editor .graphical-note-ghost {
+  opacity: 0.45;
+  pointer-events: none;
+  filter: drop-shadow(0 0 4px rgba(232, 196, 104, 0.8));
+}
+
 .graphical-editor .graphical-barline {
   cursor: ew-resize;
   touch-action: none;
@@ -291,8 +297,14 @@ button.primary:hover {
   pointer-events: all;
 }
 
+.graphical-editor .graphical-duration-hit-area {
+  cursor: ew-resize;
+  pointer-events: all;
+}
+
 .graphical-editor .graphical-note:hover .graphical-duration-handle,
-.graphical-editor .graphical-duration-handle:hover {
+.graphical-editor .graphical-duration-handle:hover,
+.graphical-editor .graphical-duration-handle-near {
   opacity: 0.85;
 }
 

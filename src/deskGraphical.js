@@ -71,6 +71,48 @@ export function appendGraphicalNote(source, note = "C") {
   return lines.join("\n");
 }
 
+export function insertGraphicalNote(source, position, note = "C") {
+  if (!Number.isInteger(position) || position < 0 || position > source.length) {
+    return null;
+  }
+  return `${source.slice(0, position)}${note} ${source.slice(position)}`;
+}
+
+export function addGraphicalOverlayNote(
+  source,
+  position,
+  note = "C",
+  unit = 0.125,
+) {
+  const lineStart = source.lastIndexOf("\n", position - 1) + 1;
+  const lineEndIndex = source.indexOf("\n", position);
+  const lineEnd = lineEndIndex < 0 ? source.length : lineEndIndex;
+  const line = source.slice(lineStart, lineEnd);
+  const localPosition = position - lineStart;
+  const barStart = Math.max(line.lastIndexOf("|", localPosition - 1) + 1, 0);
+  const nextBar = line.indexOf("|", localPosition);
+  const barEnd = nextBar < 0 ? line.length : nextBar;
+  const measure = line.slice(barStart, barEnd);
+  if (measure.includes("&")) return null;
+
+  const before = line.slice(barStart, localPosition);
+  const totalUnits = musicDuration(measure, unit);
+  const beforeUnits = musicDuration(before, unit);
+  const noteUnits = musicDuration(note, unit);
+  const afterUnits = totalUnits - beforeUnits - noteUnits;
+  if (afterUnits < -0.0001) return null;
+
+  const overlay = [
+    restForDuration(beforeUnits, unit),
+    note,
+    restForDuration(Math.max(0, afterUnits), unit),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const replacement = `${measure.trim()} & ${overlay}`;
+  return replaceRange(source, lineStart + barStart, lineStart + barEnd, replacement);
+}
+
 export function transposeGraphicalNote(source, start, end, semitones) {
   const token = source.slice(start, end);
   if (!NOTE_TOKEN_RE.test(token) || token.startsWith("[")) return null;

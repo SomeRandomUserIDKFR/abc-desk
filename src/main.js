@@ -19,7 +19,7 @@ import {
 import { expandMotifs, formatMotifParameters } from "./deskMotifs.js";
 import {
   addChordTone,
-  appendGraphicalNote,
+  addGraphicalOverlayNote,
   moveNoteToOverlay,
   moveGraphicalNoteByStaffSteps,
   moveGraphicalTokenByStaffSteps,
@@ -1879,8 +1879,41 @@ function readGraphicalStaffStep(element) {
     // line-box padding so release positions align with note centers.
     return median * 0.55;
   }
-  return 10;
-}
+
+    return 10;
+  }
+
+  function insertNoteAtGraphicalPoint(source, noteEntries, event) {
+    const targetWrapper = event.target.closest?.(".abcjs-staff-wrapper");
+    const candidates = noteEntries.filter(
+      (entry) => !targetWrapper || entry.staff === targetWrapper,
+    );
+    const entries = candidates.length ? candidates : noteEntries;
+    const target = entries.reduce((best, entry) => {
+      const box = entry.element.getBoundingClientRect();
+      const centerX = (box.left + box.right) / 2;
+      const centerY = (box.top + box.bottom) / 2;
+      const distance = Math.hypot(event.clientX - centerX, event.clientY - centerY);
+      return !best || distance < best.distance ? { entry, distance } : best;
+    }, null)?.entry;
+    if (!target) return null;
+
+    const targetBox = target.element.getBoundingClientRect();
+    const insertAt =
+      event.clientX < (targetBox.left + targetBox.right) / 2
+        ? target.note.startChar
+        : target.note.endChar;
+    const staffStep = readGraphicalStaffStep(target.element);
+    const targetCenterY = (targetBox.top + targetBox.bottom) / 2;
+    const steps = Math.round((targetCenterY - event.clientY) / staffStep);
+    const pitch = moveGraphicalTokenByStaffSteps("C", steps) || "C";
+    return addGraphicalOverlayNote(
+      source,
+      insertAt,
+      pitch,
+      readGraphicalLengthUnit(source),
+    );
+  }
 
 function graphicalStemPointsDown(abcElem, element) {
   const direction =
@@ -1916,6 +1949,7 @@ function attachGraphicalInteractions(prepared) {
   }
   const selectable = lastVisualObj?.getSelectableArray?.() ?? [];
   let activeDrag = null;
+  const durationHandles = [];
   const noteEntries = selectable
     .map((item) => ({
       note: item?.absEl?.abcelem,
@@ -1934,6 +1968,7 @@ function attachGraphicalInteractions(prepared) {
     activeDrag = null;
     current.element.classList.remove("graphical-note-dragging");
     current.element.style.transform = "";
+    current.ghost?.remove();
     current.element.dataset.graphicalDragged = current.moved ? "true" : "false";
     if (!current.moved) return;
     if (current.kind === "duration") {
@@ -2088,7 +2123,18 @@ function attachGraphicalInteractions(prepared) {
     setStatus(`${hovered ? "Swapped" : "Moved"} note${pitchBit}.`);
   };
   const moveDrag = (event) => {
-    if (!activeDrag) return;
+    if (!activeDrag) {
+      durationHandles.forEach(({ element, handle }) => {
+        const box = element.getBoundingClientRect();
+        const near =
+          event.clientX >= box.left - 36 &&
+          event.clientX <= box.right + 36 &&
+          event.clientY >= box.top - 36 &&
+          event.clientY <= box.bottom + 36;
+        handle.classList.toggle("graphical-duration-handle-near", near);
+      });
+      return;
+    }
     activeDrag.releaseY = event.clientY;
     activeDrag.releaseX = event.clientX;
     activeDrag.deltaY = activeDrag.releaseY - activeDrag.startY;
@@ -2141,7 +2187,11 @@ function attachGraphicalInteractions(prepared) {
       }
       return;
     }
-    activeDrag.element.style.transform = `translate(${event.clientX - activeDrag.startX}px, ${activeDrag.deltaY}px)`;
+    if (activeDrag.kind === "note") {
+      activeDrag.ghost.style.transform = `translate(${event.clientX - activeDrag.startX}px, ${activeDrag.deltaY}px)`;
+    } else {
+      activeDrag.element.style.transform = `translate(${event.clientX - activeDrag.startX}px, ${activeDrag.deltaY}px)`;
+    }
   };
   const stopDrag = () => finishDrag();
   document.addEventListener("mousemove", moveDrag);
@@ -2149,6 +2199,7 @@ function attachGraphicalInteractions(prepared) {
   paper.__graphicalDragCleanup = () => {
     document.removeEventListener("mousemove", moveDrag);
     document.removeEventListener("mouseup", stopDrag);
+    activeDrag?.ghost?.remove();
     activeDrag = null;
   };
   selectable.forEach((item) => {
@@ -2193,7 +2244,8 @@ function attachGraphicalInteractions(prepared) {
     handle.setAttribute("data-duration-handle", "true");
     handle.dataset.graphicalNoteIndex = element.getAttribute("data-index") || "";
     handle.setAttribute("pointer-events", "all");
-    handle.onmousedown = (event) => {
+    durationHandles.push({ element, handle });
+    const startDurationDrag = (event) => {
       event.preventDefault();
       event.stopPropagation();
       activeDrag = {
@@ -2212,7 +2264,20 @@ function attachGraphicalInteractions(prepared) {
       };
       handle.classList.add("graphical-note-dragging");
     };
+    handle.onmousedown = startDurationDrag;
     element.append(handle);
+    const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    hitArea.classList.add("graphical-duration-hit-area");
+    hitArea.setAttribute("x", String(box.x + box.width / 2 - 32));
+    hitArea.setAttribute("y", String(handleY - 16));
+    hitArea.setAttribute("width", "64");
+    hitArea.setAttribute("height", "32");
+    hitArea.setAttribute("fill", "transparent");
+    hitArea.setAttribute("data-duration-handle", "true");
+    hitArea.dataset.graphicalNoteIndex = handle.dataset.graphicalNoteIndex;
+    hitArea.setAttribute("pointer-events", "all");
+    hitArea.onmousedown = startDurationDrag;
+    element.append(hitArea);
     element.addEventListener("mousedown", (event) => {
       if (event.target.closest?.("[data-duration-handle]")) return;
       if (event.button !== 0 || abcElem.startChar == null || abcElem.endChar == null) return;
@@ -2231,6 +2296,13 @@ function attachGraphicalInteractions(prepared) {
         deltaY: 0,
         moved: false,
       };
+      const ghost = element.cloneNode(true);
+      ghost.classList.add("graphical-note-ghost");
+      ghost.querySelectorAll?.("[data-duration-handle]").forEach((handle) => handle.remove());
+      ghost.setAttribute("pointer-events", "none");
+      ghost.style.transform = "";
+      activeDrag.ghost = ghost;
+      paper.append(ghost);
       element.classList.add("graphical-note-dragging");
     });
     element.addEventListener("click", (event) => {
@@ -2277,20 +2349,20 @@ function attachGraphicalInteractions(prepared) {
     if (event.target.closest?.(".graphical-note")) return;
     event.preventDefault();
     closeGraphicalMenu();
-    const next = appendGraphicalNote(editor.value, "C");
+    const next = insertNoteAtGraphicalPoint(editor.value, noteEntries, event);
     if (next) {
       replaceEditorValue(next);
       renderScore();
-      setStatus("Inserted a C at the end of the current music line.");
+      setStatus("Inserted a note at the selected position.");
     }
   };
   paper.ondblclick = (event) => {
     if (event.target.closest?.(".graphical-note")) return;
-    const next = appendGraphicalNote(editor.value, "C");
+    const next = insertNoteAtGraphicalPoint(editor.value, noteEntries, event);
     if (!next) return;
     replaceEditorValue(next);
     renderScore();
-    setStatus("Inserted a C at the end of the current music line.");
+    setStatus("Inserted a note at the selected position.");
   };
 }
 
