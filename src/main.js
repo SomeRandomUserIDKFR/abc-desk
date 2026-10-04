@@ -560,7 +560,7 @@ const timelineTime = document.querySelector("#timeline-time");
 const supportsAudio = abcjs.synth.supportsAudio();
 
 editor.value =
-  graphicalEditorFramework && !shared ? toStrictAbc(DEFAULT_ABC) : DEFAULT_ABC;
+  !shared ? toStrictAbc(DEFAULT_ABC) : DEFAULT_ABC;
 if (shared) {
   sampleSelect.value = "";
 }
