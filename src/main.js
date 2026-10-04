@@ -24,6 +24,7 @@ import {
   moveGraphicalNoteByStaffSteps,
   moveGraphicalTokenByStaffSteps,
   moveGraphicalBarline,
+  resizeGraphicalNote,
   reorderGraphicalNote,
   sourceCanBeEdited,
 } from "./deskGraphical.js";
@@ -1944,6 +1945,27 @@ function attachGraphicalInteractions(prepared) {
         setStatus("This barline cannot be moved to that boundary.", true);
         return;
       }
+      if (current.kind === "duration") {
+        const deltaSteps = Math.round(
+          (current.releaseX - current.startX) / current.stepPixels,
+        );
+        if (!deltaSteps) return;
+        const next = resizeGraphicalNote(
+          editor.value,
+          current.note.startChar,
+          current.note.endChar,
+          deltaSteps,
+          readGraphicalLengthUnit(editor.value),
+        );
+        if (!next) {
+          setStatus("That duration would be too short.", true);
+          return;
+        }
+        replaceEditorValue(next);
+        renderScore();
+        setStatus(`Changed note duration by ${deltaSteps > 0 ? "+" : ""}${deltaSteps} half-L steps.`);
+        return;
+      }
       replaceEditorValue(next);
       renderScore();
       setStatus("Moved barline to a snapped note boundary.");
@@ -2095,6 +2117,29 @@ function attachGraphicalInteractions(prepared) {
     element.classList.add("graphical-note");
     element.setAttribute("tabindex", "0");
     element.setAttribute("draggable", "false");
+    const box = element.getBBox?.() || { x: 0, y: 0, width: 12, height: 8 };
+    const handle = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    handle.classList.add("graphical-duration-handle");
+    handle.setAttribute("x1", String(box.x + box.width / 2 - 8));
+    handle.setAttribute("x2", String(box.x + box.width / 2 + 8));
+    handle.setAttribute("y1", String(box.y + box.height + 12));
+    handle.setAttribute("y2", String(box.y + box.height + 12));
+    handle.setAttribute("data-duration-handle", "true");
+    handle.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      activeDrag = {
+        kind: "duration",
+        element: handle,
+        note: abcElem,
+        startX: event.clientX,
+        releaseX: event.clientX,
+        stepPixels: 12,
+        moved: false,
+      };
+      handle.classList.add("graphical-note-dragging");
+    });
+    element.append(handle);
     element.addEventListener("mousedown", (event) => {
       if (event.button !== 0 || abcElem.startChar == null || abcElem.endChar == null) return;
       event.preventDefault();

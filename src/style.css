@@ -281,6 +281,20 @@ button.primary:hover {
   user-select: none;
 }
 
+.graphical-editor .graphical-duration-handle {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0;
+  cursor: ew-resize;
+  pointer-events: stroke;
+}
+
+.graphical-editor .graphical-note:hover .graphical-duration-handle,
+.graphical-editor .graphical-duration-handle:hover {
+  opacity: 0.85;
+}
+
 .graphical-context-menu {
   position: fixed;
   z-index: 20;

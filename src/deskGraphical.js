@@ -150,6 +150,39 @@ export function moveGraphicalBarline(source, start, end, insertAt) {
   return `${without.slice(0, adjusted)}${token}${without.slice(adjusted)}`;
 }
 
+export function resizeGraphicalNote(source, start, end, deltaSteps, unit = 0.125) {
+  const token = source.slice(start, end);
+  const match = token.match(NOTE_TOKEN_RE);
+  if (!match) return null;
+  const duration = match[2] || "";
+  const parsed = duration.match(/^(\d+)?(?:\/(\d*))?$/);
+  if (!parsed) return null;
+  const numerator = Number(parsed[1] || 1);
+  const denominator = parsed[2] === "" ? 2 : Number(parsed[2] || 1);
+  const currentUnits = numerator / denominator;
+  const nextUnits = currentUnits + (Number(deltaSteps) || 0) / 2;
+  if (nextUnits <= 0) return null;
+  const encoded = encodeDuration(nextUnits);
+  return replaceRange(source, start, end, `${match[1]}${encoded}${match[3]}`);
+}
+
+function encodeDuration(units) {
+  if (Number.isInteger(units)) return units === 1 ? "" : String(units);
+  const denominator = 16;
+  const numerator = Math.max(1, Math.round(units * denominator));
+  const divisor = greatestCommonDivisor(numerator, denominator);
+  return `${numerator / divisor}/${denominator / divisor}`;
+}
+
+function greatestCommonDivisor(left, right) {
+  while (right) {
+    const remainder = left % right;
+    left = right;
+    right = remainder;
+  }
+  return left;
+}
+
 function replaceRange(source, start, end, replacement) {
   return `${source.slice(0, start)}${replacement}${source.slice(end)}`;
 }
