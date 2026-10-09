@@ -49,6 +49,10 @@ downloading the soundfont on first use and is separate from the normal
 experimental player. The browser FluidSynth build does not support SF3
 compression, so this uses an SF2-compatible MuseScore-oriented bank.
 
+The sample picker includes **Tears in the Rain**, a violin-led expressive
+arrangement with chamber room, light humanization, light vibrato, dynamics,
+slides, and layered treble/bass voices.
+
 ## Live site
 
 https://somerandomuseridkfr.github.io/abc-desk/
@@ -93,6 +97,7 @@ Put `%%MIDI program` **before** `K:` (in the header). After `K:` / mid-body it c
 
 - **Inst: / %%MIDI program** — GM instrument for playback (`flute`, `violin`, `atmosphere`, or `0`–`127`)
 - **Tone:** playback character — `neutral`, `warm`, `bright`, `soft`, `rustic`, `upbeat`, `sorrow`, `emotional`, `aggressive`, `swing`
+- **Vibrato:** string vibrato style — `none`/`nonvibrato`, `light`, `normal`, or `wide`; for example `Vibrato: none` disables Desk's generated vibrato while keeping the same instrument. Some soundfont patches contain baked-in vibrato that cannot be removed without a separate dry sample.
 - **Inline Tone:** change tone from a specific point in the music with `[Tone:sorrow]`. The header `Tone:` remains the initial tone; inline markers are removed before abcjs parsing and affect following notes in the experimental renderer.
 - **Room:** experimental Web Audio acoustics — `dry`, `studio`, `chamber`, `concert`, `cathedral` (active in `#testingframework`). Concert models hall-like pre-delay, asymmetric early reflections, stereo width, and a frequency-damped late field; WAV export uses the same room model.
 - **Players:** experimental ensemble size, `1`–`32`; creates layered performers with independent phrase timing, gain, pitch drift, and stereo placement
@@ -228,6 +233,11 @@ trimmed instead of shifting the following material.
 ABC slurs such as `(ABc` use dedicated experimental violin articulation: notes
 inside the slur receive a tiny bow-continuity overlap and softened re-attacks,
 while detached notes retain their normal bow changes and attacks.
+
+ABC Desk also accepts grace-note chords as either `{[A,C]}` or
+`[{A,C}]`. The pitches in the grace chord are scheduled together before the
+following note instead of as sequential grace notes. This is a Desk extension
+for chord-in-grace syntax that abcjs does not parse natively.
 | `!xhead!` `!harmonic!` `!triangle!` `!rhythmhead!` | notehead styles |
 | `!crescendo(!` … `!crescendo)!` | hairpin up (Desk reshapes the ramp) |
 | `!diminuendo(!` … / `!descendo(!` | hairpin down (alias ok) |
@@ -342,3 +352,8 @@ source panel:
 Graphical edits are source-backed and rerender the score. Desk tags, motif
 calls, multipart scores, chords, and other transformed sources remain
 source-only until their source-to-render mapping can be edited safely.
+
+The rendered-score toolbar also includes a **Technique** palette. Select a
+note in the source editor or click a rendered note, choose an articulation or
+ornament, and press **Apply**. The palette inserts standard ABC decorations for
+trills, mordents, turns, fermatas, staccato, accents, tenuto, and marcato.

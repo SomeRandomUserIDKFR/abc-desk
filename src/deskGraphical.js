@@ -78,6 +78,48 @@ export function insertGraphicalNote(source, position, note = "C") {
   return `${source.slice(0, position)}${note} ${source.slice(position)}`;
 }
 
+  export function copyGraphicalSelection(source, ranges) {
+    const valid = (ranges || [])
+      .filter((range) => Number.isInteger(range?.start) && Number.isInteger(range?.end))
+      .sort((left, right) => left.start - right.start);
+    if (!valid.length) return null;
+    return valid.map((range) => source.slice(range.start, range.end)).join(" ");
+  }
+
+  export function pasteGraphicalNotes(source, position, notes) {
+    if (!Number.isInteger(position) || position < 0 || position > source.length || !notes) {
+      return null;
+    }
+    return `${source.slice(0, position)}${notes} ${source.slice(position)}`;
+  }
+
+  export function duplicateGraphicalMeasure(source, position) {
+    if (!Number.isInteger(position)) return null;
+    const lineStart = source.lastIndexOf("\n", position - 1) + 1;
+    const lineEnd = source.indexOf("\n", position);
+    const line = source.slice(lineStart, lineEnd < 0 ? source.length : lineEnd);
+    const local = Math.max(0, position - lineStart);
+    const start = Math.max(line.lastIndexOf("|", local - 1) + 1, 0);
+    const endIndex = line.indexOf("|", local);
+    if (endIndex < 0) return null;
+    const measure = line.slice(start, endIndex).trim();
+    if (!measure) return null;
+    const insertion = `${measure} | `;
+    return replaceRange(source, lineStart + start, lineStart + start, insertion);
+  }
+
+  export function snapGraphicalDuration(source, start, end, gridUnits) {
+    const token = source.slice(start, end);
+    const match = token.match(NOTE_TOKEN_RE);
+    const grid = Number(gridUnits);
+    if (!match || !Number.isFinite(grid) || grid <= 0) return null;
+    const duration = match[2] || "";
+    const parsed = duration.match(/^(\d+)?(?:\/(\d*))?$/);
+    if (!parsed) return null;
+    const units = Number(parsed[1] || 1) / (parsed[2] === "" ? 2 : Number(parsed[2] || 1));
+    const snapped = Math.max(grid, Math.round(units / grid) * grid);
+    return replaceRange(source, start, end, `${match[1]}${encodeDuration(snapped)}${match[3]}`);
+  }
 export function addGraphicalOverlayNote(
   source,
   position,

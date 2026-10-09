@@ -26,6 +26,10 @@ import {
   moveGraphicalBarline,
   resizeGraphicalNote,
   reorderGraphicalNote,
+  copyGraphicalSelection,
+  pasteGraphicalNotes,
+  duplicateGraphicalMeasure,
+  snapGraphicalDuration,
   sourceCanBeEdited,
 } from "./deskGraphical.js";
 import { lintComposition } from "./deskLint.js";
@@ -34,6 +38,8 @@ import { createDeskPlayer, createTestingPlayer } from "./deskPlayer.js";
 import songTxt from "../Song.txt?raw";
 
 let graphicalDurationDrag = null;
+let graphicalClipboard = "";
+let graphicalSelection = [];
 
 const SAMPLES = {
   cooleys: `X:1
@@ -48,6 +54,36 @@ K:Emin
 EBBA B2 EB|B2 AB defg|afe^c dBAF|DEFD E2:|
 |:gf|eB B2 gBfB|eB B2 gedB|A2 FA DAFA|A2 FA defg|
 eB B2 gBfB|eB B2 defg|afe^c dBAF|DEFD E2:|`,
+
+  tears: `X:1
+T:Tears in the Rain
+C:ABC Desk sample
+Inst: violin
+Tone: emotional
+Human: 0.22
+Room: chamber
+Distance: 0.28
+Vibrato: light
+M:4/4
+L:1/16
+Q:140
+K:Bb
+V:1 clef=treble
+V:2 clef=bass
+V:1
+!pp! E2.E.D E2.C.D .E.B.G.F2.E.D.C| E2.C.B, E2.B,.D .E.B.GF2.E.D.C|
+E2.C.A, E2.A,.D .E.B.GF2.E.D.C| !crescendo(! D2.D.C D2.G,.A, .B,F2.D2E.D.C !crescendo)!|
+!mf! E2.E.D E2.C.D .E.B.G.F2.E.D.C| E2.C.B, E2.B,.D .E.B.GF2.E.D.C|
+E2.C.A, E2.A,.D .E.B.GF2.E.D.C| D2DC D2B,A,G,F2D2EDC|
+!f! [E2e][.Ee][.Dd] [E2e][.Cc][.Dd] [.Ee][.Bb][.Gg][.F2f][.Ee][.Dd][.Cc]|
+[E2e][.Cc][.B,B] [E2e][.B,B][.DD] [.Ee][.Bb][.Gg][F2f][.Ee][.Dd][.Cc]|
+!diminuendo(! c'2 b2 bb2b2b_a2 g2a2 !diminuendo)!| "gliss."!slide! b4 e'2d'1/2c'1/2 b8|
+V:2
+[E,16C,,]| [D,16B,,,]| [C,16A,,,]| [_C,8_A,,,][D,8B,,,]|
+C,,2C,C,, C,2C,,C, C,2C,,C,2C,,C,2|
+B,,,2B,,B,,, B,,2B,,,B,, B,,2B,,,B,,2B,,,B,,2|
+A,,,2A,,A,,, A,,2A,,,A,, A,,2A,,,A,,2A,,,A,,2|
+_A,,,2_A,,_A,,, _A,,2_A,,,_A,, _A,,2_A,,,_A,,2_A,,,_A,,2|`,
 
   lanterns: `X:1
 T:Lanterns on the Water
@@ -316,6 +352,7 @@ app.innerHTML = `
           <label class="sr-only" for="sample">Sample tune</label>
           <select id="sample" title="Load a sample">
             <option value="cooleys">Cooley's</option>
+            <option value="tears">Tears in the Rain</option>
             <option value="lanterns">Lanterns on the Water</option>
             <option value="twinkle">Twinkle</option>
             <option value="bach">Bach</option>
@@ -340,6 +377,8 @@ app.innerHTML = `
           <button type="button" id="remove-extra-spaces" title="Reduce runs of three or more spaces to two">Remove extra spaces</button>
           <button type="button" id="add-padding" title="Add only required rests to align overlay voices">Add padding</button>
           <button type="button" id="share" title="Copy shareable URL">Share</button>
+          <button type="button" id="undo" title="Undo (Ctrl+Z)" disabled>Undo</button>
+          <button type="button" id="redo" title="Redo (Ctrl+Y)" disabled>Redo</button>
           <button type="button" id="clear">Clear</button>
         </div>
       </div>
@@ -369,6 +408,28 @@ app.innerHTML = `
           <button type="button" id="download-pdf" title="Save the rendered score as PDF">PDF</button>
           <button type="button" id="download-png" title="Save the rendered score as PNG">PNG</button>
           <button type="button" id="download-jpeg" title="Save the rendered score as JPEG">JPEG</button>
+          <button type="button" id="graphical-copy" title="Copy selected graphical notes">Copy notes</button>
+          <button type="button" id="graphical-paste" title="Paste copied graphical notes">Paste notes</button>
+          <button type="button" id="duplicate-measure" title="Duplicate the measure at the current selection">Duplicate measure</button>
+          <label class="score-view technique-picker">
+            Technique
+            <select id="technique-palette" title="Choose an articulation or ornament">
+              <option value="!trill!">Trill</option>
+              <option value="!mordent!">Mordent</option>
+              <option value="!turn!">Turn</option>
+              <option value="!fermata!">Fermata</option>
+              <option value="!staccato!">Staccato</option>
+              <option value="!accent!">Accent</option>
+              <option value="!tenuto!">Tenuto</option>
+              <option value="!marcato!">Marcato</option>
+            </select>
+          </label>
+          <button type="button" id="apply-technique" title="Apply the selected technique before the current note">Apply</button>
+          <label class="score-view">Snap
+            <select id="graphical-snap" title="Snap note durations to a grid">
+              <option value="0">Off</option><option value="0.125">1/8</option><option value="0.25">1/4</option><option value="0.5">1/2</option>
+            </select>
+          </label>
         </div>
       </div>
       <div class="audio-row">
@@ -462,6 +523,8 @@ const formatStandardBtn = document.querySelector("#format-standard");
 const formatMeasuresBtn = document.querySelector("#format-measures");
 const removeExtraSpacesBtn = document.querySelector("#remove-extra-spaces");
 const addPaddingBtn = document.querySelector("#add-padding");
+const undoBtn = document.querySelector("#undo");
+const redoBtn = document.querySelector("#redo");
 const measuresPerLine = document.querySelector("#measures-per-line");
 const audioEl = document.querySelector("#audio");
 const lintList = document.querySelector("#lint-list");
@@ -471,6 +534,12 @@ const downloadWavBtn = document.querySelector("#download-wav");
 const downloadPdfBtn = document.querySelector("#download-pdf");
 const downloadPngBtn = document.querySelector("#download-png");
 const downloadJpegBtn = document.querySelector("#download-jpeg");
+const graphicalCopyBtn = document.querySelector("#graphical-copy");
+const graphicalPasteBtn = document.querySelector("#graphical-paste");
+const duplicateMeasureBtn = document.querySelector("#duplicate-measure");
+const techniquePalette = document.querySelector("#technique-palette");
+const applyTechniqueBtn = document.querySelector("#apply-technique");
+const graphicalSnapSelect = document.querySelector("#graphical-snap");
 const motifViewSelect = document.querySelector("#motif-view");
 const customizeBtn = document.querySelector("#customize");
 const customizationMenu = document.querySelector("#customization-menu");
@@ -491,6 +560,11 @@ const equalizerPanel = document.querySelector("#equalizer-panel");
 const equalizerEnabled = document.querySelector("#equalizer-enabled");
 const equalizerPreset = document.querySelector("#equalizer-preset");
 const equalizerBands = document.querySelector("#equalizer-bands");
+const undoStack = [];
+const redoStack = [];
+let lastEditorValue = "";
+let historyApplying = false;
+let programmaticEditorChange = false;
 let motifView = window.localStorage.getItem("abc-desk-motif-view") ?? "expanded";
 motifViewSelect.value = motifView;
 motifViewSelect.addEventListener("change", () => {
@@ -499,26 +573,91 @@ motifViewSelect.addEventListener("change", () => {
   if (lastPrepared) renderMotifAnnotations(lastPrepared.motif.annotations);
 });
 
-function replaceEditorValue(value) {
+function updateHistoryButtons() {
+  undoBtn.disabled = undoStack.length === 0;
+  redoBtn.disabled = redoStack.length === 0;
+}
+
+function recordEditorChange(previous, next) {
+  if (historyApplying || previous === next) return;
+  undoStack.push(previous);
+  redoStack.length = 0;
+  lastEditorValue = next;
+  updateHistoryButtons();
+}
+
+function replaceEditorValue(value, { record = true } = {}) {
   if (value === editor.value) return false;
+  const previous = editor.value;
   focusEditorWithoutScrolling();
   editor.setSelectionRange(0, editor.value.length);
+  programmaticEditorChange = true;
   if (!document.execCommand("insertText", false, value)) {
     editor.value = value;
   }
+  programmaticEditorChange = false;
   editor.setSelectionRange(value.length, value.length);
   restoreEditorScroll();
+  if (record) recordEditorChange(previous, value);
+  else lastEditorValue = value;
   return true;
 }
 
 function replaceEditorSelection(value) {
+  const previous = editor.value;
   focusEditorWithoutScrolling();
+  programmaticEditorChange = true;
   if (!document.execCommand("insertText", false, value)) {
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
     editor.setRangeText(value, start, end, "end");
   }
+  programmaticEditorChange = false;
   restoreEditorScroll();
+  recordEditorChange(previous, editor.value);
+}
+
+function insertTechniqueAtSelection(decoration) {
+  if (!decoration) return;
+  const previous = editor.value;
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+  focusEditorWithoutScrolling();
+  editor.setSelectionRange(start, start);
+  programmaticEditorChange = true;
+  const inserted = document.execCommand("insertText", false, `${decoration}`);
+  programmaticEditorChange = false;
+  if (!inserted) {
+    editor.setRangeText(decoration, start, start, "end");
+  }
+  restoreEditorScroll();
+  recordEditorChange(previous, editor.value);
+  scheduleRender();
+  setStatus(`Applied ${decoration} technique.`);
+}
+
+function applyHistoryValue(value, status) {
+  historyApplying = true;
+  replaceEditorValue(value, { record: false });
+  historyApplying = false;
+  renderScore();
+  setStatus(status);
+}
+
+function undoEditorChange() {
+  if (!undoStack.length) return;
+  const previous = undoStack.pop();
+  redoStack.push(editor.value);
+  applyHistoryValue(previous, "Undid the last edit.");
+  updateHistoryButtons();
+}
+
+function redoEditorChange() {
+  if (!redoStack.length) return;
+  const next = redoStack.pop();
+  undoStack.push(editor.value);
+  applyHistoryValue(next, "Redid the last edit.");
+  updateHistoryButtons();
 }
 
 let savedEditorScroll = null;
@@ -561,6 +700,8 @@ const supportsAudio = abcjs.synth.supportsAudio();
 
 editor.value =
   !shared ? toStrictAbc(DEFAULT_ABC) : DEFAULT_ABC;
+lastEditorValue = editor.value;
+updateHistoryButtons();
 if (shared) {
   sampleSelect.value = "";
 }
@@ -1669,6 +1810,48 @@ function setStatus(message, isError = false) {
   statusEl.classList.toggle("error", isError);
 }
 
+function resolveEditorRange(abcElem, prepared) {
+  if (
+    abcElem?.startChar == null ||
+    abcElem?.endChar == null ||
+    prepared.partInfo?.isMultiPart
+  ) {
+    return null;
+  }
+  if (prepared.cleanAbc === editor.value) {
+    return { start: abcElem.startChar, end: abcElem.endChar };
+  }
+
+  const cleanBodyMatch = prepared.cleanAbc.match(/^K:[^\n]*(?:\n|$)/im);
+  const sourceBodyMatch = editor.value.match(/^K:[^\n]*(?:\n|$)/im);
+  if (!cleanBodyMatch || !sourceBodyMatch) return null;
+  const cleanBodyStart = cleanBodyMatch.index + cleanBodyMatch[0].length;
+  const sourceBodyStart = sourceBodyMatch.index + sourceBodyMatch[0].length;
+  if (abcElem.startChar < cleanBodyStart) return null;
+
+  const token = prepared.cleanAbc.slice(abcElem.startChar, abcElem.endChar);
+  if (!token) return null;
+  const cleanBody = prepared.cleanAbc.slice(cleanBodyStart);
+  const sourceBody = editor.value.slice(sourceBodyStart);
+  const before = cleanBody.slice(0, abcElem.startChar - cleanBodyStart);
+  const occurrence = [...before.matchAll(new RegExp(escapeRegExp(token), "g"))].length;
+  let sourceIndex = -1;
+  let searchFrom = 0;
+  for (let index = 0; index <= occurrence; index += 1) {
+    sourceIndex = sourceBody.indexOf(token, searchFrom);
+    if (sourceIndex < 0) return null;
+    searchFrom = sourceIndex + token.length;
+  }
+  return {
+    start: sourceBodyStart + sourceIndex,
+    end: sourceBodyStart + sourceIndex + token.length,
+  };
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function renderLint(issues) {
   lintCount.textContent = String(issues.length);
   lintCount.dataset.level = issues.some((i) => i.severity === "error")
@@ -2180,17 +2363,26 @@ function attachGraphicalInteractions(prepared) {
           deltaSteps,
           readGraphicalLengthUnit(editor.value),
         );
-        if (next) {
+        const snapped = next && Number(graphicalSnapSelect.value)
+          ? snapGraphicalDuration(
+              next,
+              activeDrag.note.startChar,
+              activeDrag.note.endChar,
+              Number(graphicalSnapSelect.value),
+            )
+          : next;
+        if (snapped) {
           graphicalDurationDrag = {
             noteIndex: activeDrag.noteIndex,
             startX: activeDrag.startX,
             startY: activeDrag.startY,
             appliedSteps: desiredSteps,
             stepMultiplier: activeDrag.stepMultiplier,
+            historyRecorded: true,
             releaseX: event.clientX,
             releaseY: event.clientY,
           };
-          replaceEditorValue(next);
+          replaceEditorValue(snapped, { record: !activeDrag.historyRecorded });
           renderScore();
           setStatus(
             `Changed note duration by ${
@@ -2284,6 +2476,7 @@ function attachGraphicalInteractions(prepared) {
         stepPixels: 12,
         stepMultiplier: event.ctrlKey ? 0.5 : event.shiftKey ? 2 : 1,
         appliedSteps: 0,
+        historyRecorded: false,
         moved: false,
       };
       handle.classList.add("graphical-note-dragging");
@@ -2334,7 +2527,21 @@ function attachGraphicalInteractions(prepared) {
         event.preventDefault();
         event.stopImmediatePropagation();
         delete element.dataset.graphicalDragged;
+        return;
       }
+      if (event.shiftKey) {
+        const index = graphicalSelection.findIndex((range) => range.start === abcElem.startChar);
+        if (index >= 0) graphicalSelection.splice(index, 1);
+        else graphicalSelection.push({ start: abcElem.startChar, end: abcElem.endChar });
+      } else {
+        graphicalSelection = [{ start: abcElem.startChar, end: abcElem.endChar }];
+      }
+      noteEntries.forEach((entry) => {
+        entry.element.classList.toggle(
+          "graphical-note-selected",
+          graphicalSelection.some((range) => range.start === entry.note.startChar),
+        );
+      });
     }, true);
     element.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -2363,6 +2570,7 @@ function attachGraphicalInteractions(prepared) {
         stepPixels: 12,
         stepMultiplier: pending.stepMultiplier,
         appliedSteps: pending.appliedSteps,
+        historyRecorded: pending.historyRecorded,
         moved: true,
       };
       handle.classList.add("graphical-note-dragging");
@@ -2421,12 +2629,10 @@ function renderScore() {
       responsive: "resize",
       add_classes: true,
       clickListener: (abcElem) => {
-        if (abcElem?.startChar != null && abcElem?.endChar != null) {
+        const range = resolveEditorRange(abcElem, prepared);
+        if (range) {
           focusEditorWithoutScrolling();
-          // Prefer selecting in original editor when single-part
-          if (!prepared.partInfo.isMultiPart) {
-            editor.setSelectionRange(abcElem.startChar, abcElem.endChar);
-          }
+          editor.setSelectionRange(range.start, range.end);
           restoreEditorScroll();
         }
       },
@@ -2450,6 +2656,7 @@ function renderScore() {
       prepared.meta,
     );
     renderLint(issues);
+    renderMeasureLintMarkers(issues, prepared);
 
     const title = lastVisualObj?.metaText?.title ?? "Untitled";
     const deskBit = deskStatusFragment(prepared.meta);
@@ -2463,6 +2670,60 @@ function renderScore() {
       setStatus(`${base} — ${warnings[0]}`, true);
     } else {
       setStatus(base);
+    }
+
+    function renderMeasureLintMarkers(issues, prepared) {
+      const svg = paper.querySelector("svg");
+      if (!svg) return;
+      svg.querySelector(".desk-lint-markers")?.remove();
+      const measureIssues = issues.filter(
+        (issue) => issue.start != null && /^(?:meter-measure|part-meter)/.test(issue.id),
+      );
+      if (!measureIssues.length) return;
+      const notes = (lastVisualObj?.getSelectableArray?.() ?? [])
+        .map((item) => ({
+          element: item?.svgEl,
+          start: item?.absEl?.abcelem?.startChar,
+          end: item?.absEl?.abcelem?.endChar,
+        }))
+        .filter((note) => note.element && note.start != null && note.end != null);
+      const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      group.setAttribute("class", "desk-lint-markers");
+      group.setAttribute("aria-label", "Measure lint markers");
+      measureIssues.forEach((issue) => {
+        const matching = notes.filter(
+          (note) => note.end > issue.start && note.start < (issue.end ?? issue.start + 1),
+        );
+        if (!matching.length) return;
+        const boxes = matching.map((note) => note.element.getBBox?.()).filter(Boolean);
+        if (!boxes.length) return;
+        const left = Math.min(...boxes.map((box) => box.x));
+        const right = Math.max(...boxes.map((box) => box.x + box.width));
+        const top = Math.min(...boxes.map((box) => box.y));
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        marker.setAttribute("cx", String((left + right) / 2));
+        marker.setAttribute("cy", String(Math.max(8, top - 9)));
+        marker.setAttribute("r", "5");
+        marker.setAttribute("tabindex", "0");
+        marker.setAttribute("role", "button");
+        marker.setAttribute("aria-label", issue.message);
+        marker.classList.add(`desk-lint-marker-${issue.severity}`);
+        const jump = () => {
+          if (issue.start == null) return;
+          focusEditorWithoutScrolling();
+          editor.setSelectionRange(issue.start, issue.end ?? issue.start + 1);
+          restoreEditorScroll();
+        };
+        marker.addEventListener("click", jump);
+        marker.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            jump();
+          }
+        });
+        group.appendChild(marker);
+      });
+      svg.appendChild(group);
     }
 
     function renderGlissandoMarks(tune, cleanAbc) {
@@ -2708,10 +2969,18 @@ function scheduleRender() {
   renderTimer = setTimeout(renderScore, 180);
 }
 
-editor.addEventListener("input", scheduleRender);
+editor.addEventListener("input", () => {
+  if (!programmaticEditorChange && editor.value !== lastEditorValue) {
+    recordEditorChange(lastEditorValue, editor.value);
+  }
+  scheduleRender();
+});
 editor.addEventListener("change", scheduleRender);
 editor.addEventListener("paste", () => scheduleRender());
 editor.addEventListener("cut", () => scheduleRender());
+
+undoBtn.addEventListener("click", undoEditorChange);
+redoBtn.addEventListener("click", redoEditorChange);
 
 sampleSelect.addEventListener("change", () => {
   const key = sampleSelect.value;
@@ -2783,6 +3052,35 @@ addPaddingBtn.addEventListener("click", () => {
 });
 
 document.querySelector("#render-now").addEventListener("click", renderScore);
+
+graphicalCopyBtn.addEventListener("click", async () => {
+  const copied = copyGraphicalSelection(editor.value, graphicalSelection);
+  if (!copied) return setStatus("Select one or more notes in the score first.", true);
+  graphicalClipboard = copied;
+  await navigator.clipboard?.writeText(copied).catch(() => {});
+  setStatus("Copied selected graphical notes.");
+});
+
+graphicalPasteBtn.addEventListener("click", () => {
+  const position = editor.selectionEnd;
+  const next = pasteGraphicalNotes(editor.value, position, graphicalClipboard);
+  if (!next) return setStatus("Copy notes first, then choose a source position.", true);
+  replaceEditorValue(next);
+  renderScore();
+  setStatus("Pasted graphical notes.");
+});
+
+duplicateMeasureBtn.addEventListener("click", () => {
+  const next = duplicateGraphicalMeasure(editor.value, editor.selectionStart);
+  if (!next) return setStatus("Place the source selection inside a complete measure.", true);
+  replaceEditorValue(next);
+  renderScore();
+  setStatus("Duplicated measure.");
+});
+
+applyTechniqueBtn.addEventListener("click", () => {
+  insertTechniqueAtSelection(techniquePalette.value);
+});
 
 downloadMidiBtn.addEventListener("click", () => {
   try {
@@ -2907,6 +3205,20 @@ document.querySelector("#clear").addEventListener("click", () => {
 });
 
 editor.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    if (e.shiftKey) {
+      redoEditorChange();
+    } else {
+      undoEditorChange();
+    }
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+    e.preventDefault();
+    redoEditorChange();
+    return;
+  }
   if (e.key === "Tab") {
     e.preventDefault();
     replaceEditorSelection("  ");

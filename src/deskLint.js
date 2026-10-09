@@ -18,8 +18,125 @@ export function lintComposition(source, cleanAbc, visualObj, meta = {}) {
   lintDynamics(source, issues);
   lintHolds(source, issues);
   lintMismatchedTies(source, issues);
+  lintMeterMeasures(source, issues);
   if (visualObj) {
     lintFromTune(visualObj, issues);
+  }
+
+  function lintMeterMeasures(source, issues) {
+    const meter = readMeter(source);
+    const length = readLengthUnit(source);
+    if (!meter || !length) return;
+    const expectedUnits = meter.numerator / meter.denominator / length;
+    const bodyMatch = source.match(/^K:[^\n]*(?:\n|$)/im);
+    if (!bodyMatch) return;
+
+    const bodyStart = bodyMatch.index + bodyMatch[0].length;
+    const body = source.slice(bodyStart);
+    let measureStart = 0;
+    let measureNumber = 1;
+    const reportMeasure = (segment, endOffset) => {
+      const units = overlayMeasureDuration(segment, length);
+      if (units <= 0 || Math.abs(units - expectedUnits) <= 0.001) return;
+      const short = units < expectedUnits;
+      const difference = Math.abs(expectedUnits - units);
+      const severity = short && measureNumber === 1 ? "info" : "warn";
+      issues.push({
+        id: `meter-measure-${measureNumber}-${bodyStart + measureStart}`,
+        severity,
+        message: `Measure ${measureNumber} is ${short ? "short" : "long"} by ${formatUnits(difference)} L-units (${formatUnits(units)} of ${formatUnits(expectedUnits)}; M:${meter.text})`,
+        start: bodyStart + measureStart,
+        end: bodyStart + Math.max(measureStart + 1, endOffset),
+      });
+    };
+    for (const bar of body.matchAll(/\|:|:\||::|\|{1,2}/g)) {
+      const segment = body.slice(measureStart, bar.index);
+      if (!segment.trim()) {
+        measureStart = bar.index + bar[0].length;
+        continue;
+      }
+      reportMeasure(segment, bar.index);
+      measureStart = bar.index + bar[0].length;
+      measureNumber += 1;
+    }
+    const finalSegment = body.slice(measureStart);
+    if (finalSegment.trim()) reportMeasure(finalSegment, body.length);
+  }
+
+  function readMeter(source) {
+    const match = String(source).match(/^\s*M\s*:\s*([^\s%]+)/im);
+    if (!match) return null;
+    const value = match[1].trim();
+    if (/^C\|$/i.test(value)) return { numerator: 2, denominator: 2, text: "C|" };
+    if (/^C$/i.test(value)) return { numerator: 4, denominator: 4, text: "C" };
+    const numeric = value.match(/^([0-9]+(?:\s*\+\s*[0-9]+)*)\s*\/\s*([0-9]+)/);
+    if (!numeric) return null;
+    const numerator = numeric[1]
+      .split("+")
+      .reduce((sum, part) => sum + Number(part), 0);
+    return {
+      numerator,
+      denominator: Number(numeric[2]),
+      text: `${numeric[1]}/${numeric[2]}`,
+    };
+  }
+
+  function readLengthUnit(source) {
+    const match = String(source).match(/^\s*L\s*:\s*(\d+)\s*\/\s*(\d+)/im);
+    return match ? Number(match[1]) / Number(match[2]) : 0;
+  }
+
+  function overlayMeasureDuration(segment, unit) {
+    return Math.max(
+      ...segment
+        .split("&")
+        .map((voice) => musicDuration(voice, unit)),
+      0,
+    );
+  }
+
+  function musicDuration(segment, unit) {
+    const cleaned = String(segment)
+      .replace(/%.*$/gm, "")
+      .replace(/\{[^}]*\}/g, "")
+      .replace(/![^!]*!/g, "")
+      .replace(/"[^"]*"/g, "");
+    const tokenRe =
+      /(\((\d+))?|(?:\[[^\]]+\]|[_^=]*[A-Ga-gxzZ][,']*)(\d+)?(?:\/(\d*))?([<>]?)/g;
+    let total = 0;
+    let tuplet = null;
+    let previousDuration = 0;
+    for (const match of cleaned.matchAll(tokenRe)) {
+      if (match[2]) {
+        const count = Number(match[2]);
+        tuplet = count > 0 ? { remaining: count, factor: (count - 1) / count } : null;
+        continue;
+      }
+      const numerator = Number(match[3] || 1);
+      const denominator = match[4] === "" ? 2 : Number(match[4] || 1);
+      let duration = numerator / denominator;
+      if (tuplet) {
+        duration *= tuplet.factor;
+        tuplet.remaining -= 1;
+        if (tuplet.remaining <= 0) tuplet = null;
+      }
+      if (match[5] === ">") {
+        total -= previousDuration / 3;
+        duration *= 4 / 3;
+      } else if (match[5] === "<") {
+        total += previousDuration / 3;
+        duration *= 2 / 3;
+      }
+      total += duration;
+      previousDuration = duration;
+    }
+    return total;
+  }
+
+  function formatUnits(units) {
+    return Number.isInteger(units)
+      ? String(units)
+      : String(Number(units.toFixed(2)));
   }
   if (meta?.parts?.length > 1) {
     lintParts(meta.parts, issues);

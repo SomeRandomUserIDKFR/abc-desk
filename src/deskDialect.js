@@ -6,9 +6,9 @@ import abcjs from "abcjs";
  */
 
 const FRIENDLY_RE =
-  /^(Inst|Tone|Human|Imperfect|Room|Distance|Players)\s*:\s*(.*)$/i;
+  /^(Inst|Tone|Vibrato|Human|Imperfect|Room|Distance|Players)\s*:\s*(.*)$/i;
 const ENCODED_RE =
-  /^(?:%%|I:)\s*desk-(instrument|tone|human|imperfect|room|distance|players)\s+(.+)$/i;
+  /^(?:%%|I:)\s*desk-(instrument|tone|vibrato|human|imperfect|room|distance|players)\s+(.+)$/i;
 const UNKNOWN_DESK_RE = /^(?:%%|I:)\s*desk-([a-z0-9-]+)\b/i;
 const MIDI_PROGRAM_LINE_RE = /^%%\s*MIDI\s+program\b(.*)$/i;
 const DRUM_FRIENDLY_RE = /^(Drum1|Drum2)\s*:\s*(.*)$/i;
@@ -470,6 +470,21 @@ export function resolveTone(raw) {
   return { ...hit, name: normalized };
 }
 
+export function resolveVibrato(raw) {
+  if (!raw) return null;
+  const key = raw.trim().toLowerCase().replace(/\s+/g, "-");
+  const modes = {
+    none: { label: "Vibrato none", name: "none", enabled: false },
+    off: { label: "Vibrato none", name: "none", enabled: false },
+    nonvibrato: { label: "Vibrato none", name: "none", enabled: false },
+    light: { label: "Vibrato light", name: "light", enabled: true },
+    normal: { label: "Vibrato normal", name: "normal", enabled: true },
+    on: { label: "Vibrato normal", name: "normal", enabled: true },
+    wide: { label: "Vibrato wide", name: "wide", enabled: true },
+  };
+  return modes[key] ?? null;
+}
+
 export function resolveRoom(raw) {
   if (!raw) return null;
   const key = raw.trim().toLowerCase().replace(/\s+/g, "-");
@@ -571,6 +586,27 @@ export function expandDeskDecorations(abc) {
   }
 
   return { abc: out, used };
+}
+
+/**
+ * abcjs does not accept a chord enclosed inside a grace-note chord wrapper
+ * (`[{...}]`). Normalize that Desk alias to the equivalent grace wrapper
+ * before parsing; the performance callback later restores the simultaneous
+ * attack semantics.
+ * @param {string} abc
+ * @returns {string}
+ */
+function normalizeGraceChordSyntax(abc) {
+  const source = String(abc);
+  const ranges = [];
+  const normalized = source.replace(
+    /\[\{\s*([^{}\[\]]+?)\s*\}\]|\{\[\s*([^{}\[\]]+?)\s*\]\}/g,
+    (match, first, second, offset) => {
+      ranges.push({ start: offset, end: offset + match.length });
+      return `{ ${first ?? second} }`;
+    },
+  );
+  return { abc: normalized, ranges };
 }
 
 /**
@@ -714,6 +750,7 @@ export function parseDeskHeaders(source) {
   const timelinePassives = [];
   let instrumentRaw = null;
   let toneRaw = null;
+  let vibratoRaw = null;
   let humanRaw = null;
   let roomRaw = null;
   let distanceRaw = null;
@@ -770,6 +807,7 @@ export function parseDeskHeaders(source) {
       const value = friendly[2].trim();
       if (kind === "inst") instrumentRaw = value;
       else if (kind === "tone") toneRaw = value;
+      else if (kind === "vibrato") vibratoRaw = value;
       else if (kind === "human" || kind === "imperfect") humanRaw = value;
       else if (kind === "room") roomRaw = value;
       else if (kind === "distance") distanceRaw = value;
@@ -783,6 +821,7 @@ export function parseDeskHeaders(source) {
       const value = encoded[2].trim();
       if (kind === "instrument") instrumentRaw = value;
       else if (kind === "tone") toneRaw = value;
+      else if (kind === "vibrato") vibratoRaw = value;
       else if (kind === "human" || kind === "imperfect") humanRaw = value;
       else if (kind === "room") roomRaw = value;
       else if (kind === "distance") distanceRaw = value;
@@ -846,7 +885,8 @@ export function parseDeskHeaders(source) {
     kept.push(line);
   }
 
-  let cleanAbc = kept.join("\n");
+  const graceChords = normalizeGraceChordSyntax(kept.join("\n"));
+  let cleanAbc = graceChords.abc;
   const inlineToneChanges = [];
   cleanAbc = cleanAbc.replace(/\[Tone\s*:\s*([^\]]+)\]/gi, (match, rawTone, offset) => {
     const tone = resolveTone(rawTone);
@@ -861,6 +901,11 @@ export function parseDeskHeaders(source) {
   });
   const fromInst = resolveInstrument(instrumentRaw);
   const tone = resolveTone(toneRaw);
+  const vibrato = resolveVibrato(vibratoRaw) ?? {
+    label: "Vibrato normal",
+    name: "normal",
+    enabled: true,
+  };
   const humanize = resolveHumanization(humanRaw);
   const room = resolveRoom(roomRaw);
   const distance = resolveDistance(distanceRaw);
@@ -875,6 +920,9 @@ export function parseDeskHeaders(source) {
   }
   if (toneRaw && !tone) {
     warnings.push(`Unknown Tone: “${toneRaw}” (try warm, bright, soft, rustic, upbeat, sorrow, emotional, aggressive, swing, neutral)`);
+  }
+  if (vibratoRaw && !resolveVibrato(vibratoRaw)) {
+    warnings.push(`Unknown Vibrato: “${vibratoRaw}” (try none, light, normal, or wide)`);
   }
   if (humanRaw && !humanize) {
     warnings.push(`Unknown Human/Imperfect amount: “${humanRaw}” (try 0.35, 0.6, on, or off)`);
@@ -937,6 +985,8 @@ export function parseDeskHeaders(source) {
       instrument,
       tone,
       humanize,
+      vibrato,
+      vibratoRaw,
       instrumentRaw,
       toneRaw,
       humanRaw,
@@ -967,6 +1017,7 @@ export function parseDeskHeaders(source) {
       // Keep the short alias useful to consumers that do not need the
       // timeline-specific name, while retaining the descriptive field.
       passives: timelinePassives,
+      graceChords: graceChords.ranges,
     },
     warnings,
   };
@@ -1063,10 +1114,59 @@ export function toStrictAbc(source) {
 }
 
 /**
+ * Make the two supported grace-chord spellings play as one simultaneous
+ * grace attack. abcjs exposes their pitches as adjacent grace events.
+ * @param {Array<Array<object>>} tracks
+ * @param {Array<{start:number,end:number}>} ranges
+ */
+function groupGraceChordEvents(tracks, ranges = []) {
+  for (const track of tracks ?? []) {
+    for (let index = 0; index < track.length; index++) {
+      if (track[index]?.cmd !== "note" || track[index]?.style !== "grace") {
+        continue;
+      }
+
+      const start = index;
+      while (index + 1 < track.length && track[index + 1]?.style === "grace") {
+        index++;
+      }
+      const end = index;
+      const main = track[end + 1];
+      if (
+        main?.cmd !== "note" ||
+        main.startChar == null
+      ) {
+        continue;
+      }
+      const chordRange = ranges.find(
+        (range) =>
+          range.start >= main.startChar &&
+          range.end <= main.endChar,
+      );
+      if (!chordRange) continue;
+
+      const first = track[start];
+      const graceWindow = Math.max(
+        0,
+        Number(main.start) - Number(first.start),
+      );
+      if (!(graceWindow > 0)) continue;
+
+      for (let graceIndex = start; graceIndex <= end; graceIndex++) {
+        const grace = track[graceIndex];
+        grace.start = first.start;
+        grace.duration = graceWindow;
+      }
+    }
+  }
+  return tracks;
+}
+
+/**
  * Soften long held notes, unify instruments, and reshape hairpin dynamics
  * so crescendo/diminuendo feel like real ramps (not shallow steps).
  * @param {Array<Array<{start:number,end:number,volume:number,instrument?:string,pitch?:number}>>} tracks
- * @param {{ forceInstrument?: string }} [ctx]
+ * @param {{ forceInstrument?: string, vibrato?: ReturnType<typeof resolveVibrato> }} [ctx]
  */
 export function balanceHeldNotes(tracks, ctx = {}) {
   if (!tracks?.length) return tracks;
@@ -1082,6 +1182,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   const HOLD_SPAN = 1.5;
   const MIN_FACTOR = 0.9;
   const forceInst = ctx?.forceInstrument;
+  const vibratoEnabled = ctx?.vibrato?.enabled ?? true;
 
   const adaptiveStrings = Boolean(ctx?.adaptiveStrings);
   if (forceInst && !adaptiveStrings) {
@@ -1417,7 +1518,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
           note.volume = Math.max(10, Math.min(118, Math.round(note.volume * (1 + bowChange))));
         }
 
-        if (duration >= 0.45) {
+        if (duration >= 0.45 && vibratoEnabled) {
           const vibratoPhase = stableUnitNoise(
             `vibrato:${trackIndex}:${phraseProfile.seed}:${index}:${note.start}:${note.pitch}`,
           );
@@ -2339,9 +2440,11 @@ export function deskAudioParams(meta, settings = {}) {
     callbackContext: {
       forceInstrument,
       sourceText: meta.sourceText,
+      graceChords: meta.graceChords,
       drum1: meta.drum1,
       drum2: meta.drum2,
       tone: meta.tone,
+      vibrato: meta.vibrato,
       inlineToneChanges: meta.inlineToneChanges,
       humanize: meta.humanize,
       room: meta.room,
@@ -2352,10 +2455,16 @@ export function deskAudioParams(meta, settings = {}) {
       timelinePassives: meta.timelinePassives ?? meta.passives ?? [],
       tempoChanges: meta.tempoChanges ?? [],
       adaptiveStrings: false,
-      violinVibrato: forceInstrument === "violin",
+      violinVibrato:
+        ["violin", "viola", "cello", "contrabass"].includes(forceInstrument) &&
+        (meta.vibrato?.enabled ?? true),
     },
     pan,
     sequenceCallback: (tracks, ctx) => {
+      groupGraceChordEvents(
+        tracks,
+        ctx?.graceChords ?? meta.graceChords,
+      );
       const balanced = balanceHeldNotes(tracks, {
         forceInstrument: ctx?.forceInstrument ?? forceInstrument,
         sourceText: ctx?.sourceText ?? meta.sourceText,
@@ -2363,6 +2472,7 @@ export function deskAudioParams(meta, settings = {}) {
         drum1: ctx?.drum1 ?? meta.drum1,
         drum2: ctx?.drum2 ?? meta.drum2,
         tone: ctx?.tone ?? meta.tone,
+        vibrato: ctx?.vibrato ?? meta.vibrato,
         humanize: ctx?.humanize ?? meta.humanize,
         players: ctx?.players ?? meta.players,
         timelinePassives:
@@ -2521,7 +2631,7 @@ function tempoDurationFactor(ramps, time) {
 
 /**
  * Short status fragment for Inst/Tone / %%MIDI program / Desk decorations.
- * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, humanize?: ReturnType<typeof resolveHumanization>, instrumentSource?: string | null, decorationsUsed?: string[] }} meta
+ * @param {{ instrument: ReturnType<typeof resolveInstrument>, tone: ReturnType<typeof resolveTone>, vibrato?: ReturnType<typeof resolveVibrato>, humanize?: ReturnType<typeof resolveHumanization>, instrumentSource?: string | null, decorationsUsed?: string[] }} meta
  */
 export function deskStatusFragment(meta) {
   const parts = [];
@@ -2536,6 +2646,9 @@ export function deskStatusFragment(meta) {
   }
   if (meta.tone) {
     parts.push(`Tone ${meta.tone.label}`);
+  }
+  if (meta.vibrato && meta.vibrato.name !== "normal") {
+    parts.push(meta.vibrato.label);
   }
   if (meta.room) {
     parts.push(`Room ${meta.room.label}`);

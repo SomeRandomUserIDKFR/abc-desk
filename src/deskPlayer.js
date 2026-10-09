@@ -270,7 +270,6 @@ export function createTestingPlayer({
       }
       synth?.stop?.();
       synth = nextSynth;
-      synth.start();
       connectRoom(
         synth,
         currentAudioParams?.callbackContext?.room,
@@ -280,6 +279,10 @@ export function createTestingPlayer({
         currentAudioParams?.callbackContext,
         events,
       );
+      // Build the complete output graph before starting the synth. Dense
+      // scores can otherwise lose their opening notes while room/vibrato
+      // nodes are still being created.
+      synth.start();
       void startPassiveSynths(request).catch((error) => {
         if (request === playbackRequest) onPlaybackError?.(error);
       });
@@ -1462,18 +1465,22 @@ function resolveSecondsPerWholeNote(sourceText, fallbackBpm) {
 function amplifyExperimentalHuman(audioParams, majorExpansion = false) {
   const amount = Number(audioParams?.callbackContext?.humanize?.amount);
   if (!Number.isFinite(amount) || amount <= 0) return audioParams;
+  const sourceText = String(audioParams?.callbackContext?.sourceText ?? "");
+  const noteTokens =
+    sourceText.match(/(?:\^|_|=)?[A-Ga-gz](?=[,'0-9/.\-\s|&\]\[])/g)?.length ?? 0;
+  const denseScore = noteTokens > 1200;
 
   return {
     ...audioParams,
     callbackContext: {
       ...audioParams.callbackContext,
-      experimentalPerformance: true,
+      experimentalPerformance: !denseScore,
       expressionExpansion: majorExpansion,
       humanize: {
         ...audioParams.callbackContext.humanize,
-        // The experiment is deliberately expressive: Human remains the master
-        // control, but moderate values reach the existing humanizer sooner.
-        amount: Math.min(1, amount * 2.5),
+        // Keep the public Human value as the master control. The performance
+        // engine applies its own perceptual scaling once.
+        amount: Math.min(1, amount),
       },
     },
   };

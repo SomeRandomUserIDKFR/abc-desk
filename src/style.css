@@ -562,6 +562,26 @@ body.graphical-interactions .graphical-duration-handle-near {
   color: var(--text);
 }
 
+.desk-lint-markers {
+  pointer-events: none;
+}
+
+.desk-lint-markers circle {
+  pointer-events: all;
+  cursor: pointer;
+  fill: var(--accent);
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.desk-lint-marker-error {
+  fill: var(--danger) !important;
+}
+
+.graphical-note-selected {
+  filter: drop-shadow(0 0 3px var(--accent));
+}
+
 .editor-panel {
   min-height: 0;
 }
