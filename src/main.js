@@ -2641,6 +2641,7 @@ function renderScore() {
     if (gen !== renderGen) return;
 
     lastVisualObj = visualObjs[0] ?? null;
+    renderGraceChordNotation(lastVisualObj, prepared);
     renderGlissandoMarks(lastVisualObj, prepared.cleanAbc);
     renderMotifAnnotations(prepared.motif.annotations);
     attachGraphicalInteractions(prepared);
@@ -2670,6 +2671,48 @@ function renderScore() {
       setStatus(`${base} — ${warnings[0]}`, true);
     } else {
       setStatus(base);
+    }
+
+    function renderGraceChordNotation(visualObj, prepared) {
+      const ranges = prepared?.meta?.graceChords ?? [];
+      if (!visualObj || !ranges.length) return;
+
+      const selectable = visualObj.getSelectableArray?.() ?? [];
+      for (const range of ranges) {
+        const item = selectable.find((candidate) => {
+          const element = candidate?.absEl?.abcelem;
+          return (
+            candidate?.svgEl &&
+            element?.startChar <= range.start &&
+            element?.endChar >= range.end
+          );
+        });
+        const group = item?.svgEl;
+        if (!group || group.classList.contains("desk-grace-chord")) continue;
+
+        const graceHeads = [...group.querySelectorAll(".abcjs-notehead")].filter(
+          (head) => head.getAttribute("style")?.includes("scale(0.6"),
+        );
+        if (graceHeads.length < 2) continue;
+
+        const boxes = graceHeads.map((head) => head.getBBox());
+        const targetX = boxes[0].x + boxes[0].width / 2;
+        graceHeads.forEach((head, index) => {
+          const box = boxes[index];
+          const centerX = box.x + box.width / 2;
+          const shift = targetX - centerX;
+          if (Math.abs(shift) > 0.1) {
+            const wrapper = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            wrapper.setAttribute("transform", `translate(${shift} 0)`);
+            head.parentNode?.insertBefore(wrapper, head);
+            wrapper.append(head);
+          }
+        });
+
+        const graceStems = [...group.querySelectorAll('[data-name="stem"]')].slice(2);
+        graceStems.forEach((stem) => stem.setAttribute("display", "none"));
+        group.classList.add("desk-grace-chord");
+      }
     }
 
     function renderMeasureLintMarkers(issues, prepared) {

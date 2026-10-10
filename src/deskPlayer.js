@@ -279,6 +279,15 @@ export function createTestingPlayer({
         currentAudioParams?.callbackContext,
         events,
       );
+      await prepareGlissandoRuns(
+        events,
+        currentAudioParams,
+        secondsPerWholeNote,
+      );
+      if (request !== playbackRequest) {
+        synth.stop?.();
+        return;
+      }
       // Build the complete output graph before starting the synth. Dense
       // scores can otherwise lose their opening notes while room/vibrato
       // nodes are still being created.
@@ -286,12 +295,7 @@ export function createTestingPlayer({
       void startPassiveSynths(request).catch((error) => {
         if (request === playbackRequest) onPlaybackError?.(error);
       });
-      void prepareGlissandoRuns(
-        events,
-        currentAudioParams,
-        secondsPerWholeNote,
-      ).then(() => {
-        if (request !== playbackRequest || !roomBus) return;
+      if (roomBus) {
         const context = roomBus.input.context;
         scheduleGlissandoAudio(
           context,
@@ -302,7 +306,7 @@ export function createTestingPlayer({
           currentAudioParams?.pan,
           currentAudioParams?.callbackContext,
         );
-      });
+      }
       cursorControl.onStart({ events, secondsPerWholeNote });
       pausedSeconds = 0;
       playbackEnded = false;
