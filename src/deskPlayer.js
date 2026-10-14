@@ -254,6 +254,20 @@ export function createTestingPlayer({
     if (synth && paused && !playbackEnded) {
       synth.start();
       startedPassives.forEach((type) => passiveSynths.get(type)?.start());
+      const glissContext = roomBus?.input.context ?? synth.directSource?.[0]?.context;
+      const glissDestination = roomBus?.input ?? glissContext?.destination;
+      if (glissContext && glissDestination) {
+        scheduleGlissandoAudio(
+          glissContext,
+          glissDestination,
+          events,
+          secondsPerWholeNote,
+          passiveAudioNodes,
+          currentAudioParams?.pan,
+          currentAudioParams?.callbackContext,
+          pausedSeconds,
+        );
+      }
       paused = false;
       scheduleCursor(pausedSeconds);
       return;
@@ -270,6 +284,7 @@ export function createTestingPlayer({
       }
       synth?.stop?.();
       synth = nextSynth;
+      synth.start();
       connectRoom(
         synth,
         currentAudioParams?.callbackContext?.room,
@@ -288,23 +303,21 @@ export function createTestingPlayer({
         synth.stop?.();
         return;
       }
-      // Build the complete output graph before starting the synth. Dense
-      // scores can otherwise lose their opening notes while room/vibrato
-      // nodes are still being created.
-      synth.start();
       void startPassiveSynths(request).catch((error) => {
         if (request === playbackRequest) onPlaybackError?.(error);
       });
-      if (roomBus) {
-        const context = roomBus.input.context;
+      const glissContext = roomBus?.input.context ?? synth.directSource?.[0]?.context;
+      const glissDestination = roomBus?.input ?? glissContext?.destination;
+      if (glissContext && glissDestination) {
         scheduleGlissandoAudio(
-          context,
-          roomBus.input,
+          glissContext,
+          glissDestination,
           events,
           secondsPerWholeNote,
           passiveAudioNodes,
           currentAudioParams?.pan,
           currentAudioParams?.callbackContext,
+          0,
         );
       }
       cursorControl.onStart({ events, secondsPerWholeNote });
@@ -400,6 +413,7 @@ export function createTestingPlayer({
     paused = true;
     clearTimers();
     pausedSeconds = synth?.pause?.() ?? pausedSeconds;
+    stopScheduledAudioNodes();
     passiveStartTimers.forEach((timer) => window.clearTimeout(timer));
     passiveStartTimers.clear();
     startedPassives.forEach((type) => passiveSynths.get(type)?.pause?.());
@@ -424,6 +438,17 @@ export function createTestingPlayer({
     passiveSynths.clear();
     startedPassives.clear();
     roomBus?.roomNoise?.stop?.();
+    stopScheduledAudioNodes();
+    roomBus?.input.disconnect();
+    roomBus = null;
+    synth = null;
+    cursorControl.onFinished();
+    paused = false;
+    playbackEnded = false;
+    playbackStarting = false;
+  }
+
+  function stopScheduledAudioNodes() {
     passiveAudioNodes.forEach((node) => {
       try {
         node.stop();
@@ -433,13 +458,6 @@ export function createTestingPlayer({
       node.disconnect();
     });
     passiveAudioNodes = [];
-    roomBus?.input.disconnect();
-    roomBus = null;
-    synth = null;
-    cursorControl.onFinished();
-    paused = false;
-    playbackEnded = false;
-    playbackStarting = false;
   }
 
   function schedulePassiveAudio(
@@ -756,13 +774,15 @@ export function createTestingPlayer({
     nodes,
     voicePans = [],
     performanceContext = {},
+    fromSeconds = 0,
   ) {
     for (const event of noteEvents) {
       if (!event.glissando || !event.glissandoRunBuffer) continue;
       const runBuffer = event.glissandoRunBuffer;
       const targetStart = Number(event.glissandoTargetStart);
       const end = Number.isFinite(targetStart)
-        ? context.currentTime + Math.max(0, targetStart) * wholeNoteSeconds
+        ? context.currentTime +
+          Math.max(0, targetStart * wholeNoteSeconds - fromSeconds)
         : nowForEvent(event, wholeNoteSeconds, context) + runBuffer.duration;
       if (end <= context.currentTime + 0.01) continue;
       const musicalDuration = Number(event.glissandoDurationSeconds);
@@ -906,7 +926,7 @@ export function createTestingPlayer({
     if (!Number.isFinite(from) || !Number.isFinite(target)) return [];
     const direction = target >= from ? 1 : -1;
     const whiteKeys = new Set([0, 2, 4, 5, 7, 9, 11]);
-    const pitches = [];
+    const pitches = [from];
     for (
       let pitch = from + direction;
       direction > 0 ? pitch <= target : pitch >= target;
@@ -1350,6 +1370,11 @@ async function renderRoomWav(audioBuffer, room, equalizer) {
     reflectionPan.pan.value = reflection.pan * (room.width ?? 0.6);
     input.connect(delay).connect(reflectionGain).connect(reflectionPan).connect(context.destination);
   }
+  try {
+    source.disconnect();
+  } catch {
+    // The source may not be connected yet.
+  }
   source.connect(input);
   source.start();
   return encodeWav(await context.startRendering());
@@ -1461,7 +1486,11 @@ function applyGlissandoMetadata(tracks, sourceText) {
   allNotes.sort((left, right) => left.note.startChar - right.note.startChar);
 
   for (const marker of markers) {
-    const match = allNotes.find(({ note }) => note.startChar >= marker);
+    const match = allNotes.find(
+      ({ note }) =>
+        note.startChar <= marker &&
+        (note.endChar == null || note.endChar > marker),
+    ) ?? allNotes.find(({ note }) => note.startChar >= marker);
     if (!match) continue;
     const target = allNotes.find(
       ({ note }) =>
