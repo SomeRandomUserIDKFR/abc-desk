@@ -858,10 +858,46 @@ export function createTestingPlayer({
     try {
       await runSynth.init({ visualObj: tuneObj, options });
       await runSynth.prime();
-      return runSynth.getAudioBuffer() ?? null;
+      return runSynth.getAudioBuffer() ?? buildFallbackGlissandoBuffer(pitches, noteSeconds);
     } catch {
-      return null;
+      return buildFallbackGlissandoBuffer(pitches, noteSeconds);
     }
+  }
+
+  async function buildFallbackGlissandoBuffer(pitches, noteSeconds) {
+    const OfflineContext =
+      globalThis.OfflineAudioContext ?? globalThis.webkitOfflineAudioContext;
+    if (!OfflineContext || !pitches.length) return null;
+
+    const sampleRate = 44100;
+    const duration = Math.max(0.08, pitches.length * noteSeconds);
+    const context = new OfflineContext(
+      1,
+      Math.ceil(duration * sampleRate),
+      sampleRate,
+    );
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "triangle";
+    const segment = duration / pitches.length;
+    oscillator.frequency.setValueAtTime(
+      midiPitchToFrequency(pitches[0]),
+      0,
+    );
+    pitches.slice(1).forEach((pitch, index) => {
+      oscillator.frequency.linearRampToValueAtTime(
+        midiPitchToFrequency(pitch),
+        (index + 1) * segment,
+      );
+    });
+    gain.gain.setValueAtTime(0, 0);
+    gain.gain.linearRampToValueAtTime(0.42, Math.min(0.025, duration * 0.12));
+    gain.gain.setValueAtTime(0.42, Math.max(0.03, duration - 0.045));
+    gain.gain.linearRampToValueAtTime(0, duration);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start(0);
+    oscillator.stop(duration);
+    return context.startRendering();
   }
 
   function whiteKeyPath(fromPitch, targetPitch) {
@@ -913,6 +949,10 @@ function midiPitchToAbcNote(pitch) {
   if (octaveShift === 0) return letter;
   if (octaveShift > 0) return letter.toLowerCase() + "'".repeat(octaveShift - 1);
   return letter + ",".repeat(-octaveShift);
+}
+
+function midiPitchToFrequency(pitch) {
+  return 440 * 2 ** ((Number(pitch) - 69) / 12);
 }
 
 function scheduleVelocityBrightness(
