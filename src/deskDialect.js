@@ -1251,6 +1251,11 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     }
   }
   for (const group of buckets.values()) {
+    const pianoNotes = group.filter((note) => isPianoInstrument(note.instrument));
+    const pianoFactor = Math.min(1, Math.sqrt(2 / Math.max(1, pianoNotes.length)));
+    for (const note of pianoNotes) {
+      note.volume = Math.max(1, Math.round(note.volume * pianoFactor));
+    }
     if (group.length < 3) continue;
     const family = group.some((note) => isWoodwindInstrument(note.instrument))
       ? "woodwind"
@@ -1268,6 +1273,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
     );
     const chordPenalty = group.length >= 4 ? Math.max(0.52, 1.1 / Math.sqrt(group.length)) : 1;
     for (const note of group) {
+      if (isPianoInstrument(note.instrument)) continue;
       note.volume = Math.max(12, Math.round(note.volume * stackFactor * chordPenalty));
     }
   }
@@ -1322,7 +1328,9 @@ export function balanceHeldNotes(tracks, ctx = {}) {
       if (dur > HOLD_THRESHOLD) continue;
       const family = instrumentFamily(note.instrument);
       const simultaneousCount = sameStartBuckets.get(Math.round(note.start * 64))?.length ?? 1;
-      const denseChordFactor = simultaneousCount >= 4 ? 0.48 : simultaneousCount >= 3 ? 0.72 : 1;
+      const denseChordFactor = isPianoInstrument(note.instrument)
+        ? 1
+        : simultaneousCount >= 4 ? 0.48 : simultaneousCount >= 3 ? 0.72 : 1;
       const shortBase = family === "woodwind"
         ? 1.18
         : family === "strings"
@@ -1649,12 +1657,7 @@ export function balanceHeldNotes(tracks, ctx = {}) {
 }
 
 function applyPianoRegisterMix(tracks, forceInstrument) {
-  const forcedName = normalizeInstrumentName(forceInstrument);
-  const pianoForced =
-    forcedName === "acoustic-grand-piano" ||
-    forcedName === "piano" ||
-    forcedName === "bright-acoustic-piano" ||
-    forcedName === "bright-piano";
+  const pianoForced = isPianoInstrument(forceInstrument);
 
   for (const track of tracks) {
     const notes = track
@@ -1668,13 +1671,7 @@ function applyPianoRegisterMix(tracks, forceInstrument) {
       .sort((a, b) => a.start - b.start || a.pitch - b.pitch);
 
     for (const note of notes) {
-      const name = normalizeInstrumentName(note.instrument);
-      const isPiano =
-        pianoForced ||
-        name === "acoustic-grand-piano" ||
-        name === "piano" ||
-        name === "bright-acoustic-piano" ||
-        name === "bright-piano";
+      const isPiano = pianoForced || isPianoInstrument(note.instrument);
       if (!isPiano) continue;
 
       const pitch = Number(note.pitch);
@@ -2214,6 +2211,14 @@ function normalizeInstrumentName(instrument) {
     .replace(/[_\s]+/g, "-");
 }
 
+function isPianoInstrument(instrument) {
+  const name = normalizeInstrumentName(instrument);
+  return name === "acoustic-grand-piano" ||
+    name === "piano" ||
+    name === "bright-acoustic-piano" ||
+    name === "bright-piano";
+}
+
 function clampPitchForSoundfont(note) {
   if (note?.pitch == null) return;
   const pitch = Number(note.pitch);
@@ -2347,13 +2352,17 @@ function enhanceDynamicRamps(tracks, humanAmount = 0) {
     let i = 0;
     while (i < notes.length - 2) {
       const dir = Math.sign(notes[i + 1].volume - notes[i].volume);
-      if (dir === 0) {
+      const simultaneousPiano = notes[i + 1].start === notes[i].start &&
+        (isPianoInstrument(notes[i].instrument) || isPianoInstrument(notes[i + 1].instrument));
+      if (dir === 0 || simultaneousPiano) {
         i++;
         continue;
       }
       let j = i + 1;
       while (
         j < notes.length - 1 &&
+        !(notes[j + 1].start === notes[j].start &&
+          (isPianoInstrument(notes[j].instrument) || isPianoInstrument(notes[j + 1].instrument))) &&
         Math.sign(notes[j + 1].volume - notes[j].volume) === dir
       ) {
         j++;

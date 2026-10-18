@@ -192,6 +192,14 @@ soundfont playback remains unchanged.
 Piano playback applies a modest register-aware mix: very low piano notes are
 attenuated and their release is shortened slightly so repeated notes such as
 `C,,` do not overpower the middle register.
+Acoustic and bright piano chords use a single density adjustment instead of
+stacking the general chord and short-note penalties. Single notes and octaves
+retain their existing density gain; larger chords scale by `sqrt(2 / noteCount)`
+across simultaneous piano notes in all voices. This preserves existing note
+balance rather than guessing which pitch is the melody, and applies to both
+live playback and WAV export through the shared performance callback.
+Different velocities within a simultaneous piano chord are not interpreted as
+a crescendo or diminuendo; their written balance is retained.
 
 Glissando replay runs allow a small amount of additional gain headroom for
 accented notes without removing the output safety ceiling.
