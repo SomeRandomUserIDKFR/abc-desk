@@ -1,4 +1,7 @@
 import abcjs from "abcjs";
+import { isPianoInstrument } from "./pianoTone.js";
+import { isViolinInstrument } from "./sampledInstrument.js";
+import { stableSignedNoise, stableUnitNoise } from "./performanceNoise.js";
 
 /**
  * ABC Desk dialect: loose Inst: / Tone: headers (friendly or encoded).
@@ -93,6 +96,14 @@ export const DESK_DECORATIONS = {
   tenuto: {
     label: "tenuto",
     expandTo: "!tenuto!",
+  },
+  ped: {
+    label: "pedal down",
+    expandTo: '"_Ped."',
+  },
+  "ped-up": {
+    label: "pedal up",
+    expandTo: '"_*"',
   },
   marcato: {
     label: "marcato",
@@ -544,7 +555,7 @@ export function resolveDrumSound(raw) {
 /**
  * Expand Desk composition syntax into abcjs-legal ABC.
  * @param {string} abc
- * @returns {{ abc: string, used: string[] }}
+ * @returns {{ abc: string, used: string[], tempoChanges: ReturnType<typeof parseTempoChanges> }}
  */
 export function expandDeskDecorations(abc) {
   /** @type {string[]} */
@@ -568,6 +579,12 @@ export function expandDeskDecorations(abc) {
     return def.expandTo;
   });
 
+  const clustered = expandClusters(out);
+  out = clustered.abc;
+  for (const u of clustered.used) {
+    if (!used.includes(u)) used.push(u);
+  }
+  const tempoChanges = parseTempoChanges(out);
   out = out.replace(TEMPO_MARKER_RE, (match, name, boundary) => {
     const key = name.toLowerCase();
     if (!used.includes(key)) used.push(key);
@@ -579,13 +596,7 @@ export function expandDeskDecorations(abc) {
     return " ".repeat(match.length);
   });
 
-  const clustered = expandClusters(out);
-  out = clustered.abc;
-  for (const u of clustered.used) {
-    if (!used.includes(u)) used.push(u);
-  }
-
-  return { abc: out, used };
+  return { abc: out, used, tempoChanges };
 }
 
 /**
@@ -974,8 +985,7 @@ export function parseDeskHeaders(source) {
       ? instrumentFromProgram(midiProgram)
       : fromInst;
 
-  const tempoChanges = parseTempoChanges(cleanAbc);
-  const { abc: withDecos, used: decorationsUsed } =
+  const { abc: withDecos, used: decorationsUsed, tempoChanges } =
     expandDeskDecorations(cleanAbc);
   cleanAbc = withDecos;
 
@@ -1204,6 +1214,8 @@ export function balanceHeldNotes(tracks, ctx = {}) {
   for (const track of tracks) {
     for (const note of track) {
       if (note.volume == null || note.start == null || note.end == null) continue;
+      if (isPianoInstrument(note.instrument)) note.pianoVelocity = note.volume;
+      if (isViolinInstrument(note.instrument)) note.violinVelocity = note.volume;
       const dur = Math.max(0.001, note.end - note.start);
       const family = instrumentFamily(note.instrument);
       const profile = familyMixProfile(family);
@@ -2179,11 +2191,6 @@ function isWoodwindInstrument(instrument) {
   return Number.isInteger(program) && WOODWIND_PROGRAMS.has(program);
 }
 
-function isViolinInstrument(instrument) {
-  const name = normalizeInstrumentName(instrument);
-  return name === "violin" || name === "fiddle";
-}
-
 function isBowedStringInstrument(instrument) {
   const name = normalizeInstrumentName(instrument);
   if (name.includes("pizzicato")) return false;
@@ -2211,14 +2218,6 @@ function normalizeInstrumentName(instrument) {
     .replace(/[_\s]+/g, "-");
 }
 
-function isPianoInstrument(instrument) {
-  const name = normalizeInstrumentName(instrument);
-  return name === "acoustic-grand-piano" ||
-    name === "piano" ||
-    name === "bright-acoustic-piano" ||
-    name === "bright-piano";
-}
-
 function clampPitchForSoundfont(note) {
   if (note?.pitch == null) return;
   const pitch = Number(note.pitch);
@@ -2226,20 +2225,6 @@ function clampPitchForSoundfont(note) {
   const family = instrumentFamily(note.instrument);
   if (family !== "keyboard") return;
   note.pitch = Math.max(KEYBOARD_PITCH_RANGE.min, Math.min(KEYBOARD_PITCH_RANGE.max, Math.round(pitch)));
-}
-
-function stableUnitNoise(seed) {
-  let hash = 2166136261;
-  const text = String(seed);
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) / 4294967295;
-}
-
-function stableSignedNoise(seed) {
-  return stableUnitNoise(seed) * 2 - 1;
 }
 
 function instrumentFamily(instrument) {
@@ -2446,6 +2431,11 @@ export function deskAudioParams(meta, settings = {}) {
   const options = {
     chordsOff: false,
     fadeLength: 320,
+    pianoDamperRelease: false,
+    highQualityPiano: settings.highQualityPiano === true,
+    highQualityViolin: settings.highQualityViolin === true,
+    onPianoLoadProgress: settings.onPianoLoadProgress,
+    onViolinLoadProgress: settings.onViolinLoadProgress,
     callbackContext: {
       forceInstrument,
       sourceText: meta.sourceText,
@@ -2466,6 +2456,7 @@ export function deskAudioParams(meta, settings = {}) {
       adaptiveStrings: false,
       violinVibrato:
         ["violin", "viola", "cello", "contrabass"].includes(forceInstrument) &&
+        !(settings.highQualityViolin === true && isViolinInstrument(forceInstrument)) &&
         (meta.vibrato?.enabled ?? true),
     },
     pan,
@@ -2494,6 +2485,7 @@ export function deskAudioParams(meta, settings = {}) {
       applyTempoGestures(
         balanced,
         ctx?.tempoChanges ?? meta.tempoChanges ?? [],
+        ctx?.pianoPedalEvents,
       );
       return limitPolyphony(
         balanced,
@@ -2523,13 +2515,14 @@ export function deskAudioParams(meta, settings = {}) {
   return options;
 }
 
-function applyTempoGestures(tracks, changes) {
+function applyTempoGestures(tracks, changes, controls = []) {
   if (!Array.isArray(changes) || !changes.length) return tracks;
   const notes = tracks
     .flat()
     .filter(
       (event) =>
-        event?.cmd === "note" &&
+        (event?.cmd === "note" || (controls.length > 0 && event?.cmd == null)) &&
+        Number.isFinite(Number(event.pitch)) &&
         Number.isFinite(Number(event.start)) &&
         Number.isFinite(Number(event.end)) &&
         Number.isFinite(Number(event.startChar)),
@@ -2537,11 +2530,15 @@ function applyTempoGestures(tracks, changes) {
     .sort((a, b) => Number(a.startChar) - Number(b.startChar));
   if (!notes.length) return tracks;
 
+  const anchors = notes.concat(controls.filter((event) => Number.isFinite(event.startChar)))
+    .sort((a, b) => a.startChar - b.startChar);
   const ramps = [];
   const pending = new Map();
   for (const change of changes) {
     const type = change.type === "accelerando" ? "accelerando" : "ritardando";
-    const note = notes.find((event) => event.startChar >= change.at);
+    const note = anchors.find((event) =>
+      event.startChar <= change.at && event.endChar > change.at) ??
+      anchors.find((event) => event.startChar >= change.at);
     if (!note) continue;
     if (change.mode === "end") {
       const start = pending.get(type);
@@ -2570,7 +2567,11 @@ function applyTempoGestures(tracks, changes) {
   }
   if (!ramps.length) return tracks;
 
-  const end = Math.max(...notes.map((note) => Number(note.end)), 0);
+  const end = Math.max(
+    ...notes.map((note) => Number(note.end)),
+    ...controls.map((event) => event.start),
+    0,
+  );
   const boundaries = [...new Set([
     0,
     end,
@@ -2605,19 +2606,15 @@ function applyTempoGestures(tracks, changes) {
     ) / 2;
   };
 
-  for (const track of tracks) {
-    for (const event of track) {
-      if (
-        event?.cmd !== "note" ||
-        !Number.isFinite(Number(event.start)) ||
-        !Number.isFinite(Number(event.end))
-      ) continue;
-      const start = Number(event.start);
-      const finish = Number(event.end);
-      event.start = mapTime(start);
-      event.end = Math.max(event.start + 0.001, mapTime(finish));
-      event.duration = event.end - event.start;
-    }
+  for (const event of notes) {
+    const start = Number(event.start);
+    const finish = Number(event.end);
+    event.start = mapTime(start);
+    event.end = Math.max(event.start + 0.001, mapTime(finish));
+    event.duration = event.end - event.start;
+  }
+  for (const event of controls) {
+    event.start = mapTime(event.start);
   }
   return tracks;
 }

@@ -1,0 +1,24 @@
+University of Iowa solo violin
+
+Recordings: Lawrence Fritts / University of Iowa Electronic Music Studios,
+2012 violin sample collection.
+
+Source and published terms:
+https://theremin.music.uiowa.edu/MIS.html
+https://theremin.music.uiowa.edu/MISviolin2012.html
+
+The source states that these recordings may be downloaded and used for any
+projects, without restrictions. No purchase or individual permission request
+is required under those published terms.
+
+ABC Desk packages quiet (pp), medium (mf), and loud (ff) stereo recordings as
+lossless 16-bit FLAC. Silence is trimmed with 20 ms pre/post margins; up to the
+first 2.4 seconds are retained. There is no per-note normalization, noise reduction,
+EQ, or tuning correction. Playback transposes the nearest recorded root and
+uses crossfaded sustain loops for longer notes. These are not recorded legato
+transitions or a complete model of violin bowing.
+
+Exact source archive hash, extraction coordinates, pitch checks, and packaged
+file hashes are in iowa-violin/provenance.json. Rebuild with
+scripts/prepare-iowa-violin.py (Python, NumPy, soundfile) and the source ZIP
+identified there.

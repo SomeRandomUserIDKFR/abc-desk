@@ -1,0 +1,17 @@
+Salamander Grand Piano V3
+Samples recorded by Alexander Holm on a Yamaha C5.
+SFZ mapping reconstructed by kinwie.
+
+Source: https://github.com/sfzinstruments/SalamanderGrandPiano
+Pinned revision: 3382bf9496bba2486f5ab0de55a264d1dfc38404
+License: Creative Commons Attribution 3.0 Unported
+https://creativecommons.org/licenses/by/3.0/
+
+ABC Desk downloads only the samples needed for a performance. The recordings
+are not bundled. Playback transposes samples using the source key mapping,
+selects among all 16 recorded velocity layers, and applies ABC Desk's mix,
+timing, release, pan, and optional room processing.
+
+This is a sample-based adaptation, not a complete implementation of the
+source instrument's SFZ/ARIA controls. Recorded release/pedal-noise layers,
+sympathetic resonance, and the SFZ controller curves are not implemented.

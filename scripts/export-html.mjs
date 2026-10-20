@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
+import { IOWA_VIOLIN_SAMPLES } from "../src/iowaViolinSamples.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tempDir = path.join(rootDir, ".standalone-html");
@@ -61,7 +62,17 @@ if (jsMatches.length !== 1) {
 }
 
 const jsSourcePath = path.join(tempDir, jsMatches[0][1]);
-const jsBundle = await fs.readFile(jsSourcePath, "utf8");
+let jsBundle = await fs.readFile(jsSourcePath, "utf8");
+const violinDirectory = path.join(rootDir, "public", "iowa-violin");
+const violinSamples = {};
+for (const name of (await fs.readdir(violinDirectory)).filter(name => name.endsWith(".flac")).sort()) {
+  violinSamples[name] = `data:audio/flac;base64,${(await fs.readFile(path.join(violinDirectory, name))).toString("base64")}`;
+}
+if (Object.keys(violinSamples).length !== Object.keys(IOWA_VIOLIN_SAMPLES).length ||
+    Object.values(IOWA_VIOLIN_SAMPLES).some(sample => !violinSamples[sample.name])) {
+  throw new Error("The Iowa violin bank is incomplete for standalone export.");
+}
+jsBundle = `globalThis.abcDeskIowaSamples=${JSON.stringify(violinSamples)};\n${jsBundle}`;
 const jsDataUri = `data:text/javascript;charset=utf-8,${encodeURIComponent(jsBundle)}`;
 html = html.replace(jsMatches[0][0], `<script type="module" src="${jsDataUri}"></script>`);
 

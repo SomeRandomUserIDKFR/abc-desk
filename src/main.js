@@ -34,7 +34,9 @@ import {
 } from "./deskGraphical.js";
 import { lintComposition } from "./deskLint.js";
 import { readShareFromLocation, copyShareUrl } from "./deskShare.js";
+import { createDraftStore, createDraftAutosave, DRAFT_PREFIX, DRAFT_TAB_KEY } from "./deskDrafts.js";
 import { createDeskPlayer, createTestingPlayer } from "./deskPlayer.js";
+import { initializeStudio } from "./studio.js";
 import songTxt from "../Song.txt?raw";
 
 let graphicalDurationDrag = null;
@@ -298,6 +300,7 @@ const testingFramework = frameworkHash === "#testingframework";
 const violinPreset = frameworkHash === "#violin";
 const museScoreFramework = frameworkHash === "#musescore";
 const graphicalEditorFramework = frameworkHash === "#graphicaleditor";
+const studioFramework = frameworkHash === "#studio";
 const experimentalFramework = !oldFramework;
 const DEFAULT_ABC =
   shared ||
@@ -325,6 +328,31 @@ app.innerHTML = `
           <option value="next-note">Next note</option>
         </select>
         <button type="button" id="equalizer-open">Equalizer</button>
+        <label class="piano-quality" for="high-quality-piano">
+          <input id="high-quality-piano" type="checkbox" aria-describedby="piano-quality-notice"
+            ${oldFramework || museScoreFramework ? "disabled" : ""}>
+          High-quality piano (Salamander)
+        </label>
+        <p id="piano-quality-notice" class="piano-quality-notice">
+          ${oldFramework || museScoreFramework ? "Available in the default/experimental player only. " : ""}
+          Off by default. Downloads the required piano samples from GitHub on first use,
+          often 1-3 MB each; large scores can download hundreds of MB.
+          Used for playback and WAV export.
+          <a href="https://github.com/sfzinstruments/SalamanderGrandPiano" target="_blank" rel="noopener noreferrer">Alexander Holm's Salamander</a>,
+          <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a>.
+        </p>
+        <label class="piano-quality" for="high-quality-violin">
+          <input id="high-quality-violin" type="checkbox" aria-describedby="violin-quality-notice"
+            ${oldFramework || museScoreFramework ? "disabled" : ""}>
+          Use high quality violin
+        </label>
+        <p id="violin-quality-notice" class="piano-quality-notice">
+          ${oldFramework || museScoreFramework ? "Available in the default/experimental player only. " : ""}
+          Off by default. Loads the required Iowa solo-violin samples on first use,
+          with quiet, medium, and loud recordings. Used for playback and WAV export.
+          Long notes use crossfaded sustain loops; this is not recorded legato.
+          <a href="https://theremin.music.uiowa.edu/MIS.html" target="_blank" rel="noopener noreferrer">University of Iowa / Lawrence Fritts: use in any projects without restrictions</a>.
+        </p>
       </div>
     </div>
   </header>
@@ -382,6 +410,16 @@ app.innerHTML = `
           <button type="button" id="clear">Clear</button>
         </div>
       </div>
+      <div class="draft-bar">
+        <span id="draft-status" role="status" aria-live="polite">Autosave ready</span>
+        <button type="button" id="draft-recovery-toggle" aria-expanded="false" aria-controls="draft-recovery">Recover drafts</button>
+        <button type="button" id="draft-download">Download ABC</button>
+        <button type="button" id="draft-retry" hidden>Retry save</button>
+      </div>
+      <section id="draft-recovery" class="draft-recovery" aria-label="Saved draft recovery" hidden>
+        <p>Up to 12 recent versions, saved in this browser only. Restoring preserves your current work first.</p>
+        <ul id="draft-list"></ul>
+      </section>
       <textarea id="editor" spellcheck="false" aria-label="ABC notation editor"></textarea>
       <div class="lint-panel" aria-label="Composition lint">
         <div class="lint-header">
@@ -511,6 +549,15 @@ style.textContent = `
   .customization-menu select {
     min-width: 9rem;
   }
+  .customization-menu .piano-quality {
+    margin-top: 0.8rem;
+  }
+  .piano-quality-notice {
+    width: min(19rem, calc(100vw - 4rem));
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
 `;
 document.head.appendChild(style);
 
@@ -544,6 +591,8 @@ const motifViewSelect = document.querySelector("#motif-view");
 const customizeBtn = document.querySelector("#customize");
 const customizationMenu = document.querySelector("#customization-menu");
 const cursorStyleSelect = document.querySelector("#cursor-style");
+const highQualityPiano = document.querySelector("#high-quality-piano");
+const highQualityViolin = document.querySelector("#high-quality-violin");
 const testingMetrics = document.querySelector("#testing-metrics");
 const performanceTimeline = document.querySelector("#performance-timeline");
 const timelinePhrases = document.querySelector("#timeline-phrases");
@@ -565,6 +614,8 @@ const redoStack = [];
 let lastEditorValue = "";
 let historyApplying = false;
 let programmaticEditorChange = false;
+let draftAutosave = null;
+let suppressDraftSaving = false;
 let motifView = window.localStorage.getItem("abc-desk-motif-view") ?? "expanded";
 motifViewSelect.value = motifView;
 motifViewSelect.addEventListener("change", () => {
@@ -580,6 +631,7 @@ function updateHistoryButtons() {
 
 function recordEditorChange(previous, next) {
   if (historyApplying || previous === next) return;
+  if (!suppressDraftSaving) draftAutosave?.changed();
   undoStack.push(previous);
   redoStack.length = 0;
   lastEditorValue = next;
@@ -599,7 +651,10 @@ function replaceEditorValue(value, { record = true } = {}) {
   editor.setSelectionRange(value.length, value.length);
   restoreEditorScroll();
   if (record) recordEditorChange(previous, value);
-  else lastEditorValue = value;
+  else {
+    lastEditorValue = value;
+    if (!suppressDraftSaving) draftAutosave?.changed();
+  }
   return true;
 }
 
@@ -698,13 +753,142 @@ cursorStyleSelect.addEventListener("change", () => {
 const timelineTime = document.querySelector("#timeline-time");
 const supportsAudio = abcjs.synth.supportsAudio();
 
-editor.value =
-  !shared ? toStrictAbc(DEFAULT_ABC) : DEFAULT_ABC;
+const draftStatus = document.querySelector("#draft-status");
+const draftRecoveryToggle = document.querySelector("#draft-recovery-toggle");
+const draftRecovery = document.querySelector("#draft-recovery");
+const draftList = document.querySelector("#draft-list");
+const draftRetry = document.querySelector("#draft-retry");
+const draftStore = createDraftStore({ storage: () => window.localStorage });
+let recoveredDraft = null;
+let draftStartupError = null;
+const shareContext = () => /^#(?:d|abc)=/.test(window.location.hash) ? window.location.hash : null;
+try {
+  const drafts = draftStore.list();
+  let pointer = null;
+  try {
+    const rawPointer = window.sessionStorage.getItem(DRAFT_TAB_KEY);
+    if (rawPointer) pointer = JSON.parse(rawPointer);
+  } catch (error) {
+    draftStartupError = new Error(`Tab recovery is unavailable: ${error.message ?? error}`);
+  }
+  if (shared === null || pointer?.share === shareContext()) {
+    recoveredDraft = drafts.find((entry) => entry.id === pointer?.id) ??
+      (shared === null ? drafts[0] : null);
+  }
+} catch (error) {
+  draftStartupError = error;
+}
+editor.value = recoveredDraft?.source ??
+  (shared !== null ? shared : toStrictAbc(DEFAULT_ABC));
 lastEditorValue = editor.value;
 updateHistoryButtons();
-if (shared) {
+if (shared !== null || recoveredDraft) {
   sampleSelect.value = "";
 }
+
+function draftError(error) {
+  draftStatus.textContent = `Autosave incomplete: ${error.message ?? error} Download ABC to keep a copy.`;
+  draftStatus.classList.add("draft-error");
+  draftRetry.hidden = false;
+}
+
+function refreshDraftRecovery() {
+  draftList.replaceChildren();
+  try {
+    const entries = draftStore.list();
+    if (!entries.length) {
+      const empty = document.createElement("li");
+      empty.textContent = "No saved drafts yet. Changes are saved automatically.";
+      draftList.append(empty);
+    }
+    for (const entry of entries) {
+      const item = document.createElement("li");
+      const description = document.createElement("span");
+      const title = entry.source.match(/^T:\s*(.*)$/m)?.[1]?.trim() ||
+        (entry.source ? "Untitled draft" : "Empty draft");
+      description.textContent = `${title} — ${new Date(entry.updatedAt).toLocaleString()} (${entry.source.length} characters)`;
+      const restore = document.createElement("button");
+      restore.type = "button";
+      restore.textContent = "Restore";
+      restore.setAttribute("aria-label", `Restore ${title}, ${new Date(entry.updatedAt).toLocaleString()}`);
+      restore.addEventListener("click", () => {
+        if (!draftAutosave.flush({ checkpoint: true })) return;
+        draftAutosave.reset();
+        suppressDraftSaving = true;
+        try {
+          replaceEditorValue(entry.source);
+        } finally {
+          suppressDraftSaving = false;
+        }
+        if (shareContext()) history.replaceState(null, "", window.location.pathname + window.location.search);
+        sampleSelect.value = "";
+        draftAutosave.changed();
+        draftAutosave.flush();
+        renderScore();
+      });
+      item.append(description, restore);
+      draftList.append(item);
+    }
+  } catch (error) {
+    draftError(error);
+  }
+}
+
+draftAutosave = createDraftAutosave({
+  store: draftStore,
+  readSource: () => editor.value,
+  initialSource: recoveredDraft?.source ?? null,
+  onSaved(entry) {
+    window.sessionStorage.setItem(DRAFT_TAB_KEY, JSON.stringify({ id: entry.id, share: shareContext() }));
+  },
+  onState({ state, entry, error }) {
+    if (state === "error") return draftError(error);
+    draftStatus.classList.remove("draft-error");
+    draftRetry.hidden = true;
+    draftStatus.textContent = state === "pending" ? "Saving draft..." :
+      state === "saved" ? `Saved locally at ${new Date(entry.updatedAt).toLocaleTimeString()}` :
+      "No unsaved changes.";
+    if (state === "saved" && !draftRecovery.hidden) refreshDraftRecovery();
+  },
+});
+if (draftStartupError) draftError(draftStartupError);
+else if (recoveredDraft) draftStatus.textContent = "Restored your saved draft.";
+else if (shared !== null) draftStatus.textContent = "Shared tune opened. Your other drafts are preserved.";
+
+draftRecoveryToggle.addEventListener("click", () => {
+  draftRecovery.hidden = !draftRecovery.hidden;
+  draftRecoveryToggle.setAttribute("aria-expanded", String(!draftRecovery.hidden));
+  if (!draftRecovery.hidden) refreshDraftRecovery();
+});
+draftRetry.addEventListener("click", () => {
+  draftAutosave.changed();
+  draftAutosave.flush();
+});
+document.querySelector("#draft-download").addEventListener("click", () => {
+  try {
+    triggerDownloadFromBlob(
+      new Blob([editor.value], { type: "text/plain;charset=utf-8" }),
+      "abc-desk-draft.abc",
+    );
+  } catch (error) {
+    setStatus(`Could not download ABC: ${error.message ?? error}`, true);
+  }
+});
+window.addEventListener("pagehide", () => draftAutosave.flush());
+window.addEventListener("beforeunload", (event) => {
+  if (!draftAutosave.flush()) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") draftAutosave.flush();
+});
+window.addEventListener("storage", (event) => {
+  if ((event.key === null || event.key.startsWith(DRAFT_PREFIX)) && !draftRecovery.hidden) {
+    refreshDraftRecovery();
+  }
+});
 
 let player = null;
 let renderTimer = null;
@@ -716,6 +900,22 @@ const equalizerSettings = {
   enabled: false,
   bands: Object.fromEntries(equalizerFrequencies.map((frequency) => [frequency, 0])),
 };
+highQualityPiano.checked = window.localStorage.getItem("abc-desk-high-quality-piano") === "true";
+highQualityPiano.addEventListener("change", () => {
+  window.localStorage.setItem("abc-desk-high-quality-piano", String(highQualityPiano.checked));
+  applyAudioSettings();
+  setStatus(highQualityPiano.checked
+    ? "Salamander enabled. Required samples download when preparing piano playback or WAV export."
+    : "High-quality piano off. Using the standard piano.");
+});
+highQualityViolin.checked = window.localStorage.getItem("abc-desk-high-quality-violin") === "true";
+highQualityViolin.addEventListener("change", () => {
+  window.localStorage.setItem("abc-desk-high-quality-violin", String(highQualityViolin.checked));
+  applyAudioSettings();
+  setStatus(highQualityViolin.checked
+    ? "High quality violin enabled. Required Iowa samples load when preparing violin playback or WAV export."
+    : "High quality violin off. Using the standard violin.");
+});
 
 function polyphonyScaleFromSlider(position) {
   const value = Math.max(0, Math.min(100, Number(position) || 0));
@@ -735,6 +935,18 @@ function createAudioParams(meta) {
   return deskAudioParams(meta, {
     polyphonyScale: polyphonyScaleFromSlider(polyphonySliderPosition),
     equalizer: equalizerSettings,
+    highQualityPiano: highQualityPiano.checked && experimentalFramework && !museScoreFramework,
+    highQualityViolin: highQualityViolin.checked && experimentalFramework && !museScoreFramework,
+    onViolinLoadProgress: ({ completed, total }) => setStatus(
+      completed < total
+        ? `Preparing Iowa violin samples (${completed}/${total})...`
+        : "Iowa violin ready.",
+    ),
+    onPianoLoadProgress: ({ completed, total }) => setStatus(
+      completed < total
+        ? `Preparing Salamander piano samples (${completed}/${total})...`
+        : "Salamander piano ready.",
+    ),
   });
 }
 
@@ -3027,7 +3239,18 @@ redoBtn.addEventListener("click", redoEditorChange);
 
 sampleSelect.addEventListener("change", () => {
   const key = sampleSelect.value;
-  replaceEditorValue(SAMPLES[key] ?? DEFAULT_ABC);
+  if (!draftAutosave.flush({ checkpoint: true })) {
+    sampleSelect.value = "";
+    return;
+  }
+  suppressDraftSaving = true;
+  try {
+    replaceEditorValue(SAMPLES[key] ?? DEFAULT_ABC);
+  } finally {
+    suppressDraftSaving = false;
+  }
+  draftAutosave.reset();
+  draftStatus.textContent = "Sample opened. Previous drafts are preserved; edits will be autosaved.";
   history.replaceState(null, "", window.location.pathname + window.location.search);
   renderScore();
 });
@@ -3242,7 +3465,11 @@ document.querySelector("#share").addEventListener("click", async () => {
 });
 
 document.querySelector("#clear").addEventListener("click", () => {
+  if (!draftAutosave.flush({ checkpoint: true })) return;
+  draftAutosave.reset();
   replaceEditorValue("");
+  draftAutosave.changed();
+  draftAutosave.flush();
   history.replaceState(null, "", window.location.pathname + window.location.search);
   renderScore();
 });
@@ -3273,3 +3500,14 @@ void initSynth().then(() => {
   renderScore();
   updateDownloadButtons();
 });
+
+if (studioFramework) {
+  initializeStudio({
+    app,
+    defaultSource: editor.value,
+    onPreview: (source) => {
+      replaceEditorValue(source);
+      renderScore();
+    },
+  });
+}

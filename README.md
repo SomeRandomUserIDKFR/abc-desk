@@ -17,6 +17,33 @@ npm run export-html
 
 The generated file is `abc-desk.standalone.html`. It bundles the app CSS and JS inline, so it does not require a sibling `assets/` folder or a local web server.
 
+## Autosave and draft recovery
+
+Source edits are saved locally after 600 ms of inactivity, including formatting,
+graphical edits, undo/redo and Studio preview changes. Pending changes are also
+saved when the page becomes hidden or is left. On reload, the editor restores
+this tab's saved draft, or the most recent local draft when opening a new tab.
+Empty drafts are restored as empty rather than replaced by the default sample.
+
+The Source panel shows save status and provides **Recover drafts**, **Retry save**
+when needed, and **Download ABC** for an independent text-file copy. Recovery
+keeps up to 12 recent versions across tabs. Continuous editing updates a
+checkpoint for up to 30 seconds before starting another; opening a sample,
+clearing, or restoring a version preserves the current draft first.
+Restoring a version is undoable and does not delete the version being restored.
+
+Unedited samples and newly opened shared links do not replace your saved work.
+Edits to them become a new draft; refreshing an edited shared link in the same
+tab restores those edits. Separate tabs save to distinct draft records rather
+than overwriting one shared text value. Recovery lists refresh across tabs
+without replacing the open editor's contents.
+
+Drafts live in this browser's local storage, not in an account or the cloud.
+Storage is specific to the site's origin/browser profile and can be lost when
+site data is cleared. Storage/corrupt-data errors are shown explicitly; failed
+saves leave the editor intact and offer retry/download rather than reporting
+success. Keep downloaded backups for important work.
+
 ## Player backends
 
 The experimental player is now the default route. Use `#oldframework` to load the
@@ -28,6 +55,7 @@ http://localhost:5173/
 http://localhost:5173/#oldframework
 http://localhost:5173/#testingframework
 http://localhost:5173/#violin
+http://localhost:5173/#studio
 ```
 
 This route uses the real abcjs soundfont renderer with a small experimental test clock,
@@ -49,9 +77,48 @@ downloading the soundfont on first use and is separate from the normal
 experimental player. The browser FluidSynth build does not support SF3
 compression, so this uses an SF2-compatible MuseScore-oriented bank.
 
+`#studio` opens the instrumental score manager preview. It keeps the main ABC
+score in a large shared source panel, lets players select `V:` / `Part:` blocks
+or paste local ABC, and provides a drag-and-drop room for players, podiums,
+the conductor placeholder, and microphones. Player parameters and scene
+objects are stored internally in the browser; the first route slice previews
+the selected player's ABC through the existing player while the independent
+room routing is developed.
+
 The sample picker includes **Tears in the Rain**, a violin-led expressive
 arrangement with chamber room, light humanization, light vibrato, dynamics,
 slides, and layered treble/bass voices.
+
+## High-quality violin
+
+**Customize -> Use high quality violin** is an opt-in, persisted setting, off
+by default. It replaces violin/fiddle notes in the default and experimental
+players with the University of Iowa solo violin auditioned as candidate #4.
+Other instruments, the legacy player, and the MuseScore comparison backend
+retain their existing sources; the checkbox is disabled on unsupported backends.
+
+The bank has quiet, medium, and loud recordings, selected using pre-mix dynamics
+(MIDI 1-62, 63-96, and 97-127). It preserves processed timing, volume, cents,
+voice pan, Human settings, room, and equalizer processing. The same source is
+used for live playback, passive replays, glissando preparation, and WAV export.
+The extra default violin vibrato effect is disabled for this source so it does
+not stack on the recordings.
+
+Samples are served with the app and fetched only when needed, with a 32 MiB
+decoded LRU cache and explicit loading/errors (no silent standard-violin fallback).
+Notes use the nearest sampled pitch (G3-E7 for quiet/medium, G3-C7 for loud) and
+transpose the endpoints outside those ranges. The loud E7 take failed source
+pitch verification and is deliberately excluded rather than mislabeled.
+Long notes use crossfaded sustain loops. This is not recorded legato,
+continuous within-note dynamic crossfading, or a full bowing simulation. MIDI
+exports contain notation/instrument data, not these audio samples.
+
+The standalone HTML export embeds the violin bank, increasing its file size but
+avoiding a dependency on sibling sample files. The recordings and existing
+unrestricted-use terms are credited in `public/iowa-violin-credits.txt`.
+`public/iowa-violin/provenance.json` records source/extraction/file hashes.
+Developers can regenerate the bank with `python scripts/prepare-iowa-violin.py
+<source-zip>` using NumPy and soundfile; the source URL is in the provenance.
 
 ## Live site
 
@@ -200,6 +267,108 @@ balance rather than guessing which pitch is the melody, and applies to both
 live playback and WAV export through the shared performance callback.
 Different velocities within a simultaneous piano chord are not interpreted as
 a crescendo or diminuendo; their written balance is retained.
+The default/experimental player also gives acoustic and bright piano notes
+five strike-dependent tone levels. Gentle strikes receive up to 6 dB of
+high-shelf attenuation above 2.4 kHz; the strongest strikes retain the original
+sample brightness. Tone follows the note velocity before chord and register
+mix compensation, so a full chord is not mistaken for a softer touch.
+The levels are rendered independently before mixing, allowing a quiet note and
+a strong note to keep different tones even when they overlap. This processing
+is shared by live playback, passive replays, glissando runs, and WAV export.
+It approximates touch with the existing samples, not recorded velocity layers,
+and adds preparation time for piano playback. The legacy `#oldframework` and
+separate `#musescore` backends are unchanged.
+
+### Optional high-quality piano
+
+In **Customize**, enable **High-quality piano (Salamander)** to use Alexander
+Holm's recorded Yamaha C5 instead of the standard acoustic/bright piano samples.
+It is off by default and the preference is saved in this browser. It applies
+to the default/experimental player's playback, passive replays, glissando runs,
+and WAV export, but not the separate legacy or MuseScore backends.
+Other instruments retain their existing samples.
+
+The renderer selects among all 16 recorded strike layers using velocity before
+chord/register mix attenuation. Unlike the standard piano's five filtered tone
+bands, these are different recordings; the high-quality piano does not receive
+that extra strike-tone filter. Written dynamics, mix balance, Human/Imperfect,
+timing, pan, key releases and explicit sustain pedal remain active.
+
+Samples are fetched on demand from a pinned revision of the
+[Salamander Grand Piano repository](https://github.com/sfzinstruments/SalamanderGrandPiano).
+Expect roughly 1-3 MB per sample in the middle register, and potentially
+hundreds of MB for large scores with many pitches/strike strengths.
+There is no automatic full-bank download. Browser HTTP caching can reuse
+downloads, while the decoded-audio cache is limited to 32 MiB. Internet access
+is required for uncached samples. Preparation reports sample progress; failed
+downloads/decoding stop with an error rather than silently substituting the
+standard piano. Turn the setting off to return to the lightweight source.
+
+Glissando samples are prepared before the main voices start. Cursor events and
+glissando targets use the processed note timings and the main audio clock, so
+sample-loading time does not put the main voices ahead of the cursor or runs.
+
+This is a sample-based adaptation, not the full SFZ/ARIA instrument: recorded
+release/pedal noises, sympathetic resonance and SFZ controller curves are not
+implemented. Samples outside the recorded A0-C8 keyboard range use transposition
+from the nearest available recording.
+Samples are licensed **CC BY 3.0**; see
+[Salamander credits](public/salamander-credits.txt).
+
+### Piano release and sustain pedal
+
+The default/experimental piano renderer uses short damping tails for staccato
+notes, moderate tails for ordinary key releases, and gentler damping for tenuto
+and long-held notes. These tails are independent of strike-tone levels and do
+not change note attacks. Non-piano instruments keep their existing releases.
+The modeled staccato damper is temporarily disabled for listening comparisons;
+playback and WAV export currently use the ordinary linear release instead.
+The model remains available in the renderer.
+
+Piano staccato uses a tempo-independent 60% key-hold portion before mix and
+humanization adjustments. Without pedal, its release uses a two-stage damper
+approximation instead of a linear cutoff: a gently engaging, quick reduction followed
+by a quiet residual ring-off from the same sample. High partials damp faster
+than the remaining low-frequency body, only after the key releases; the
+attack retains its normal strike tone and volume. The residual tail lasts
+about 140 ms, mostly at low level, with a 32 ms final fade that flattens
+smoothly into silence. Each note is
+processed independently, so its release cannot damp another held note.
+Higher Human settings deterministically vary the damper speed and ring-off
+length. This models a release using sustained samples, not recorded key-up
+samples or a complete physical piano model.
+
+Place `!ped!` before a note or rest to press the sustain pedal and `!ped-up!`
+before a note or rest to lift it. The score displays `Ped.` and `*` below the
+staff. The pedal is shared across piano voices; its timing follows rests,
+repeats, and Desk tempo gestures:
+
+```abc
+X:1
+Inst: piano
+Human: 0.25
+M:4/4
+L:1/4
+Q:120
+K:C
+!ped!C E G c | !ped-up!z C .D !tenuto!E |
+```
+
+Keys released while the pedal is down continue their sampled decay until the
+pedal lifts. Already-damped notes are not revived, and keys still held are not
+cut off by pedal-up. Repeated strikes of the same pitch damp the previous
+sample to avoid accumulating identical sustained voices. An unclosed pedal
+automatically lifts at the end of the score. This is a sustain approximation,
+not sympathetic-string resonance or half-pedaling.
+
+`Human:` and `Imperfect:` add deterministic finger-release offsets (up to
+18 ms), small damping-tail variations, and shared pedal timing offsets (up to
+25 ms). They use the existing doubled, capped humanization scale, so `0`
+disables the variation and `0.5` reaches full strength. Pedal timing variation
+is constrained near adjacent markings to preserve their order. The same score
+and settings produce the same deviations in playback and WAV export.
+These release/pedal changes apply to the default/experimental renderer;
+legacy playback and MIDI export do not interpret the pedal annotations.
 
 Glissando replay runs allow a small amount of additional gain headroom for
 accented notes without removing the output safety ceiling.

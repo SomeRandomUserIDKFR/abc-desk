@@ -9,6 +9,7 @@ import {
   createTimelinePassiveEvents,
   normalizePerformanceTracks,
 } from "./deskEvents.js";
+import { primePianoSynth } from "./pianoTone.js";
 
 export function createDeskPlayer({ abcjs, audioSelector, cursorControl }) {
   const supportsAudio = abcjs.synth.supportsAudio();
@@ -134,6 +135,7 @@ export function createTestingPlayer({
   let playbackEnded = false;
   let playbackStarting = false;
   let playbackRequest = 0;
+  let playbackAbort = null;
 
   return {
     supportsAudio: true,
@@ -173,34 +175,7 @@ export function createTestingPlayer({
         bpm,
       );
       const sequence = visualObj.setUpAudio(currentAudioParams);
-      const tracks = normalizePerformanceTracks(sequence?.tracks ?? []);
-      applyGlissandoMetadata(
-        tracks,
-        currentAudioParams?.callbackContext?.sourceText,
-      );
-      for (const track of tracks) {
-        for (const event of track) {
-          if (event.end == null) {
-            event.end = event.start + event.duration;
-          }
-        }
-      }
-      events = tracks.flat().filter(
-        (event) => event.cmd === "note" && !event.ensembleReplica,
-      );
-      const graph = buildPerformanceGraph(tracks, currentAudioParams?.callbackContext);
-      attachVisualElements(events, visualObj);
-      events = events.concat(
-        createTimelinePassiveEvents(
-          events,
-          currentAudioParams?.callbackContext?.timelinePassives,
-        ),
-      );
-      diagnostics = summarizeEvents(tracks, {}, graph);
-      diagnostics.glissandi = events.filter((event) => event.glissando).length;
-      diagnostics.duration = Math.round(
-        Math.max(...events.map(eventEnd), 0) * 1000,
-      ) / 1000;
+      updatePerformanceTracks(sequence?.tracks ?? []);
       paused = false;
       playbackEnded = false;
     },
@@ -222,8 +197,7 @@ export function createTestingPlayer({
       const wavSynth = new abcjs.synth.CreateSynth();
       const options = amplifyExperimentalHuman(audioParams, majorExpansion);
       try {
-        await wavSynth.init({ visualObj: nextVisualObj, options });
-        await wavSynth.prime();
+        await primePianoSynth(abcjs, wavSynth, { visualObj: nextVisualObj, options });
         const room = options?.callbackContext?.room;
         const equalizer = options?.callbackContext?.equalizer;
         if ((room && room.mix > 0) || equalizer?.enabled) {
@@ -248,6 +222,25 @@ export function createTestingPlayer({
     },
   };
 
+  function updatePerformanceTracks(sourceTracks) {
+    const tracks = normalizePerformanceTracks(sourceTracks);
+    applyGlissandoMetadata(tracks, currentAudioParams?.callbackContext?.sourceText);
+    for (const track of tracks) {
+      for (const event of track) {
+        if (event.end == null) event.end = event.start + event.duration;
+      }
+    }
+    events = tracks.flat().filter((event) => !event.ensembleReplica);
+    const graph = buildPerformanceGraph(tracks, currentAudioParams?.callbackContext);
+    attachVisualElements(events, visualObj);
+    events = events.concat(createTimelinePassiveEvents(
+      events, currentAudioParams?.callbackContext?.timelinePassives,
+    ));
+    diagnostics = summarizeEvents(tracks, {}, graph);
+    diagnostics.glissandi = events.filter((event) => event.glissando).length;
+    diagnostics.duration = Math.round(Math.max(...events.map(eventEnd), 0) * 1000) / 1000;
+  }
+
   async function play() {
     if (!visualObj) return;
     if (playbackStarting) return;
@@ -266,6 +259,7 @@ export function createTestingPlayer({
           currentAudioParams?.pan,
           currentAudioParams?.callbackContext,
           pausedSeconds,
+          synth.startTimeSec,
         );
       }
       paused = false;
@@ -274,16 +268,39 @@ export function createTestingPlayer({
     }
     playbackStarting = true;
     const request = ++playbackRequest;
+    playbackAbort?.abort();
+    playbackAbort = new AbortController();
+    const audioParams = { ...currentAudioParams, pianoSampleSignal: playbackAbort.signal };
     const nextSynth = new abcjs.synth.CreateSynth();
     try {
-      await nextSynth.init({ visualObj, options: currentAudioParams });
-      await nextSynth.prime();
+      await primePianoSynth(abcjs, nextSynth, {
+        visualObj, options: audioParams,
+        onPerformanceTracks(tracks) {
+          if (request !== playbackRequest) return;
+          updatePerformanceTracks(tracks.map((track) => track.map((note) => ({
+            ...note, cmd: "note",
+            duration: Math.max(0, (note.pianoKeyEnd ?? note.end) - note.start),
+            endType: note.pianoArticulation ?? note.endType,
+          }))));
+        },
+      });
+      if (request !== playbackRequest) {
+        nextSynth.stop?.();
+        return;
+      }
+      secondsPerWholeNote = nextSynth.millisecondsPerMeasure / 1000 / nextSynth.meterSize;
+      await prepareGlissandoRuns(
+        events,
+        audioParams,
+        secondsPerWholeNote,
+      );
       if (request !== playbackRequest) {
         nextSynth.stop?.();
         return;
       }
       synth?.stop?.();
       synth = nextSynth;
+      cursorControl.onStart({ events, secondsPerWholeNote });
       synth.start();
       connectRoom(
         synth,
@@ -294,15 +311,6 @@ export function createTestingPlayer({
         currentAudioParams?.callbackContext,
         events,
       );
-      await prepareGlissandoRuns(
-        events,
-        currentAudioParams,
-        secondsPerWholeNote,
-      );
-      if (request !== playbackRequest) {
-        synth.stop?.();
-        return;
-      }
       void startPassiveSynths(request).catch((error) => {
         if (request === playbackRequest) onPlaybackError?.(error);
       });
@@ -318,14 +326,15 @@ export function createTestingPlayer({
           currentAudioParams?.pan,
           currentAudioParams?.callbackContext,
           0,
+          synth.startTimeSec,
         );
       }
-      cursorControl.onStart({ events, secondsPerWholeNote });
       pausedSeconds = 0;
       playbackEnded = false;
       scheduleCursor(0);
     } catch (error) {
       nextSynth.stop?.();
+      if (request !== playbackRequest) return;
       if (request === playbackRequest) {
         synth = null;
         cursorControl.onFinished();
@@ -344,8 +353,9 @@ export function createTestingPlayer({
       if (!type) continue;
       const nextSynth = new abcjs.synth.CreateSynth();
       try {
-        await nextSynth.init({ visualObj, options: currentAudioParams });
-        await nextSynth.prime();
+        await primePianoSynth(abcjs, nextSynth, {
+          visualObj, options: { ...currentAudioParams, pianoSampleSignal: playbackAbort?.signal },
+        });
         if (request !== playbackRequest) {
           nextSynth.stop?.();
           return;
@@ -374,42 +384,44 @@ export function createTestingPlayer({
   }
 
   function scheduleCursor(fromSeconds) {
-    const startedAt = performance.now() - fromSeconds * 1000;
-    timers.push(window.setInterval(() => {
-      cursorControl.onProgress((performance.now() - startedAt) / 1000);
-    }, 16));
-    for (const event of events) {
-      const eventSeconds = (Number(event.start) || 0) * secondsPerWholeNote;
-      if (eventSeconds < fromSeconds) continue;
-      const delay = Math.max(0, Math.round((eventSeconds - fromSeconds) * 1000));
-      timers.push(window.setTimeout(() => cursorControl.onEvent({
-        sourceEvent: event,
-        elements: event.elements || event.elts || [],
-        timelinePassive: event.timelinePassive,
-        highlightDuration: eventDuration(event) * secondsPerWholeNote * 1000,
-        playbackSeconds: eventSeconds,
-        left: 0,
-        top: 0,
-        height: 0,
-      }), delay));
-      timers.push(window.setTimeout(() => {
-        onPerformanceEvent?.({
-          event,
-          seconds: eventSeconds,
-          duration: eventDuration(event) * secondsPerWholeNote,
-        });
-      }, delay));
-    }
+    const context = abcjs.synth.activeAudioContext();
+    const origin = synth.startTimeSec;
+    if (!Number.isFinite(origin)) throw new Error("Playback audio clock is unavailable.");
+    const request = playbackRequest;
+    const pending = events.filter((event) =>
+      (Number(event.start) || 0) * secondsPerWholeNote >= fromSeconds,
+    ).sort((a, b) => a.start - b.start);
+    let next = 0;
     const end = Math.max(...events.map(eventEnd), 0);
-    timers.push(window.setTimeout(() => {
-      cursorControl.onFinished();
-      paused = true;
-      playbackEnded = true;
-    }, Math.max(0, Math.round((end * secondsPerWholeNote - fromSeconds) * 1000)) + 20));
+    const timer = window.setInterval(() => {
+      if (request !== playbackRequest) return;
+      const seconds = Math.max(fromSeconds, context.currentTime - origin);
+      cursorControl.onProgress(seconds);
+      while (next < pending.length && pending[next].start * secondsPerWholeNote <= seconds) {
+        const event = pending[next++];
+        const eventSeconds = event.start * secondsPerWholeNote;
+        cursorControl.onEvent({
+          sourceEvent: event, elements: event.elements || event.elts || [],
+          timelinePassive: event.timelinePassive,
+          highlightDuration: eventDuration(event) * secondsPerWholeNote * 1000,
+          playbackSeconds: eventSeconds, left: 0, top: 0, height: 0,
+        });
+        onPerformanceEvent?.({ event, seconds: eventSeconds,
+          duration: eventDuration(event) * secondsPerWholeNote });
+      }
+      if (seconds >= end * secondsPerWholeNote + 0.02) {
+        window.clearInterval(timer);
+        cursorControl.onFinished();
+        paused = true;
+        playbackEnded = true;
+      }
+    }, 16);
+    timers.push(timer);
   }
 
   function pause() {
     playbackRequest++;
+    playbackAbort?.abort();
     paused = true;
     clearTimers();
     pausedSeconds = synth?.pause?.() ?? pausedSeconds;
@@ -430,6 +442,7 @@ export function createTestingPlayer({
 
   function invalidate() {
     playbackRequest++;
+    playbackAbort?.abort();
     clearTimers();
     synth?.stop();
     passiveStartTimers.forEach((timer) => window.clearTimeout(timer));
@@ -775,21 +788,22 @@ export function createTestingPlayer({
     voicePans = [],
     performanceContext = {},
     fromSeconds = 0,
+    origin = context.currentTime - fromSeconds,
   ) {
     for (const event of noteEvents) {
       if (!event.glissando || !event.glissandoRunBuffer) continue;
       const runBuffer = event.glissandoRunBuffer;
       const targetStart = Number(event.glissandoTargetStart);
       const end = Number.isFinite(targetStart)
-        ? context.currentTime +
-          Math.max(0, targetStart * wholeNoteSeconds - fromSeconds)
-        : nowForEvent(event, wholeNoteSeconds, context) + runBuffer.duration;
+        ? origin + targetStart * wholeNoteSeconds
+        : origin + event.start * wholeNoteSeconds + runBuffer.duration;
       if (end <= context.currentTime + 0.01) continue;
       const musicalDuration = Number(event.glissandoDurationSeconds);
       const duration = Number.isFinite(musicalDuration)
         ? Math.min(runBuffer.duration, Math.max(0.05, musicalDuration))
         : runBuffer.duration;
       const start = Math.max(context.currentTime, end - duration);
+      const offset = start - (end - duration);
       const source = context.createBufferSource();
       const gain = context.createGain();
       source.buffer = runBuffer;
@@ -811,7 +825,7 @@ export function createTestingPlayer({
       const ensembleScale = 1 / Math.sqrt(playerCount);
       gain.gain.value *= ensembleScale;
       source.connect(gain).connect(panner).connect(destination);
-      source.start(start, 0, duration);
+      source.start(start, offset, end - start);
       nodes.push(source);
     }
   }
@@ -864,9 +878,11 @@ export function createTestingPlayer({
     const runSynth = new abcjs.synth.CreateSynth();
     // A short fade keeps each burst note distinct rather than slurring into
     // the next — a real glissando run, not overlapping decay tails.
+    const fadeLength = Math.min(120, Math.max(45, Number(audioParams?.fadeLength) || 55));
     const options = {
       ...audioParams,
-      fadeLength: Math.min(120, Math.max(45, Number(audioParams?.fadeLength) || 55)),
+      fadeLength,
+      violinReleaseMs: fadeLength,
       callbackContext: audioParams?.callbackContext
         ? {
             ...audioParams.callbackContext,
@@ -876,11 +892,17 @@ export function createTestingPlayer({
         : undefined,
     };
     try {
-      await runSynth.init({ visualObj: tuneObj, options });
-      await runSynth.prime();
-      return runSynth.getAudioBuffer() ?? buildFallbackGlissandoBuffer(pitches, noteSeconds);
-    } catch {
+      await primePianoSynth(abcjs, runSynth, { visualObj: tuneObj, options });
+      const buffer = runSynth.getAudioBuffer();
+      if (!buffer && (audioParams?.highQualityPiano || audioParams?.highQualityViolin)) {
+        throw new Error("High-quality instrument glissando produced no audio.");
+      }
+      return buffer ?? buildFallbackGlissandoBuffer(pitches, noteSeconds);
+    } catch (error) {
+      if (audioParams?.highQualityPiano || audioParams?.highQualityViolin) throw error;
       return buildFallbackGlissandoBuffer(pitches, noteSeconds);
+    } finally {
+      runSynth.stop?.();
     }
   }
 
